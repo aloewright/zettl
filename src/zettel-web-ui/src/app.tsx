@@ -22,6 +22,9 @@ const ContentReviewPage = lazy(() =>
 const VoiceConfigPage = lazy(() =>
   import('./pages/voice-config').then((m) => ({ default: m.VoiceConfigPage })),
 )
+const VoicePage = lazy(() =>
+  import('./pages/voice').then((m) => ({ default: m.VoicePage })),
+)
 const KbHealthPage = lazy(() =>
   import('./pages/kb-health').then((m) => ({ default: m.KbHealthPage })),
 )
@@ -73,6 +76,14 @@ export const router = createBrowserRouter([
       },
       {
         path: '/voice',
+        element: (
+          <Suspense fallback={<LazyFallback />}>
+            <VoicePage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/voice-config',
         element: (
           <Suspense fallback={<LazyFallback />}>
             <VoiceConfigPage />

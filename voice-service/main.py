@@ -1,0 +1,176 @@
+"""FastAPI entry point for the Zettel voice service."""
+
+import asyncio
+import base64
+import json
+import logging
+import os
+import time
+import uuid
+
+from dotenv import load_dotenv
+
+load_dotenv()  # load .env before any other module reads env vars
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect  # noqa: E402
+from strands.experimental.bidi import (  # noqa: E402
+    BidiAudioInputEvent,
+    BidiAudioStreamEvent,
+    BidiErrorEvent,
+    BidiResponseCompleteEvent,
+    BidiResponseStartEvent,
+    BidiTranscriptStreamEvent,
+)
+from strands.experimental.bidi.tools import ToolResultEvent, ToolUseStreamEvent  # noqa: E402
+
+from agent import create_agent  # noqa: E402
+from tools import AUDIO_SAMPLE_RATE, extract_citations, get_note, search_notes  # noqa: E402, F401
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Zettel Voice Service")
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    await websocket.accept()
+    session_id = str(uuid.uuid4())
+    start = time.monotonic()
+    disconnect_reason = "unknown"
+    logger.info("voice session started", extra={"session.id": session_id})
+
+    agent = create_agent()
+    cited_note_ids: set[str] = set()
+
+    async def _send_json(payload: dict) -> None:
+        try:
+            await websocket.send_text(json.dumps(payload))
+        except Exception as exc:
+            logger.debug("_send_json failed (session closing): %s", exc)
+
+    try:
+        await agent.start()
+        await _send_json({"type": "status", "state": "listening"})
+
+        async def _receive_from_browser() -> None:
+            """Forward binary PCM frames from the browser into Nova Sonic."""
+            try:
+                while True:
+                    data = await websocket.receive_bytes()
+                    audio_b64 = base64.b64encode(data).decode("utf-8")
+                    await agent.send(
+                        BidiAudioInputEvent(
+                            audio=audio_b64,
+                            format="pcm",
+                            sample_rate=AUDIO_SAMPLE_RATE,
+                            channels=1,
+                        )
+                    )
+            except WebSocketDisconnect:
+                pass
+            except Exception as exc:
+                logger.warning(
+                    "receive_from_browser error: %s", exc, extra={"session.id": session_id}
+                )
+
+        async def _receive_from_agent() -> None:
+            """Process events from Nova Sonic and forward to the browser."""
+            nonlocal cited_note_ids
+
+            async for event in agent.receive():
+                if isinstance(event, BidiResponseStartEvent):
+                    await _send_json({"type": "status", "state": "thinking"})
+
+                elif isinstance(event, BidiAudioStreamEvent):
+                    await _send_json({"type": "status", "state": "speaking"})
+                    audio_bytes = base64.b64decode(event.audio)
+                    await websocket.send_bytes(audio_bytes)
+
+                elif isinstance(event, BidiTranscriptStreamEvent):
+                    if event.is_final:
+                        role = getattr(event, "role", "assistant")
+                        text = getattr(event, "current_transcript", None) or getattr(event, "text", "")
+                        if text:
+                            await _send_json(
+                                {"type": "transcript", "role": role, "text": text}
+                            )
+
+                elif isinstance(event, ToolUseStreamEvent):
+                    # A tool call is about to fire — switch to thinking state
+                    await _send_json({"type": "status", "state": "thinking"})
+
+                elif isinstance(event, ToolResultEvent):
+                    result = getattr(event, "result", None)
+                    if result is not None:
+                        new_citations = [
+                            c for c in extract_citations(result)
+                            if c["id"] not in cited_note_ids
+                        ]
+                        for c in new_citations:
+                            cited_note_ids.add(c["id"])
+                        if new_citations:
+                            await _send_json({"type": "citations", "notes": new_citations})
+
+                elif isinstance(event, BidiResponseCompleteEvent):
+                    await _send_json({"type": "status", "state": "listening"})
+
+                elif isinstance(event, BidiErrorEvent):
+                    message = getattr(event, "message", str(event))
+                    logger.error(
+                        "nova sonic error: %s", message, extra={"session.id": session_id}
+                    )
+                    await _send_json({"type": "error", "message": message})
+                    break  # session is in undefined state after a BidiErrorEvent; stop cleanly
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(_receive_from_browser())
+                tg.create_task(_receive_from_agent())
+        except* WebSocketDisconnect:
+            disconnect_reason = "client_disconnect"
+            logger.info(
+                "voice session: client disconnected", extra={"session.id": session_id}
+            )
+        except* Exception as eg:
+            disconnect_reason = "agent_error"
+            for exc in eg.exceptions:
+                logger.exception(
+                    "voice session error: %s", exc, extra={"session.id": session_id}
+                )
+            await _send_json({"type": "error", "message": "session error"})
+
+    except WebSocketDisconnect:
+        disconnect_reason = "client_disconnect"
+        logger.info("WebSocket client disconnected", extra={"session.id": session_id})
+    except Exception as exc:
+        disconnect_reason = "unhandled_exception"
+        logger.exception(
+            "Unhandled error in WebSocket session: %s", exc, extra={"session.id": session_id}
+        )
+        await _send_json({"type": "error", "message": str(exc)})
+    finally:
+        duration_ms = round((time.monotonic() - start) * 1000, 1)
+        logger.info(
+            "voice session ended",
+            extra={
+                "session.id": session_id,
+                "session.duration_ms": duration_ms,
+                "session.disconnect_reason": disconnect_reason,
+            },
+        )
+        try:
+            await agent.stop()
+        except Exception as exc:
+            logger.warning(
+                "agent.stop() failed: %s", exc, extra={"session.id": session_id}
+            )

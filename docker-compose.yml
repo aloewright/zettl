@@ -51,9 +51,36 @@ services:
       - "traefik.http.routers.backend.entrypoints=web"
       - "traefik.http.routers.backend.priority=100"
       - "traefik.http.services.backend.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
     depends_on:
       db:
         condition: service_healthy
+
+  voice-service:
+    build:
+      context: ./voice-service
+    environment:
+      ZETTEL_API_URL: http://backend:8080
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.voice-service.rule=PathPrefix(`/voice-service`)"
+      - "traefik.http.routers.voice-service.entrypoints=web"
+      - "traefik.http.routers.voice-service.priority=50"
+      - "traefik.http.middlewares.voice-strip.stripprefix.prefixes=/voice-service"
+      - "traefik.http.routers.voice-service.middlewares=voice-strip"
+      - "traefik.http.services.voice-service.loadbalancer.server.port=8000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles: ["voice"]
 
   frontend:
     build:
