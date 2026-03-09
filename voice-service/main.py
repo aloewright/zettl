@@ -91,9 +91,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         data = await websocket.receive_bytes()
                         frames += 1
                         if frames == 1:
+                            import struct
+                            samples = struct.unpack(f"{len(data) // 2}h", data)
+                            peak = max(abs(s) for s in samples)
                             logger.info(
-                                "first audio frame received (%d bytes)",
+                                "first audio frame received (%d bytes), peak amplitude: %d",
                                 len(data),
+                                peak,
                                 extra={"session.id": session_id},
                             )
                         elif frames % 200 == 0:

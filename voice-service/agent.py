@@ -17,7 +17,7 @@ conversational — this is a voice interface.\
 
 _MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.nova-sonic-v2:0")
 _VOICE_NAME = os.getenv("NOVA_SONIC_VOICE", "matthew")
-_VAD_SENSITIVITY = os.getenv("NOVA_SONIC_VAD_SENSITIVITY", "MEDIUM")
+_VAD_SENSITIVITY = os.getenv("NOVA_SONIC_VAD_SENSITIVITY", "LOW")
 _MAX_TOKENS = int(os.getenv("NOVA_SONIC_MAX_TOKENS", "2048"))
 _TEMPERATURE = float(os.getenv("NOVA_SONIC_TEMPERATURE", "0.7"))
 
