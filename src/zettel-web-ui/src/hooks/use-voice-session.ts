@@ -317,7 +317,6 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     silentSink.connect(audioCtx.destination)
 
     processor.onaudioprocess = (e) => {
-      if (!isSpeakingRef.current) return
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
 
       const inputData = e.inputBuffer.getChannelData(0)
