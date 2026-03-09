@@ -150,8 +150,14 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       audioCtxRef.current = null
     }
 
+    if (playbackCtxRef.current) {
+      playbackCtxRef.current.close()
+      playbackCtxRef.current = null
+    }
+
     isSpeakingRef.current = false
     nextPlayTimeRef.current = 0
+    nextPlaybackTimeRef.current = 0
   }, [])
 
   // ── Unmount cleanup ───────────────────────────────────────────────────────
@@ -164,9 +170,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
 
   // ── Audio playback ────────────────────────────────────────────────────────
 
+  // Nova Sonic outputs 24kHz PCM — use a dedicated playback context at that rate
+  const playbackCtxRef = useRef<AudioContext | null>(null)
+  const nextPlaybackTimeRef = useRef(0)
+
   const playPcmFrame = useCallback((data: ArrayBuffer) => {
-    const ctx = audioCtxRef.current
-    if (!ctx) return
+    // Lazily create (or reuse) the 24kHz playback context
+    if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
+      playbackCtxRef.current = new AudioContext({ sampleRate: 24000 })
+      nextPlaybackTimeRef.current = 0
+    }
+    const ctx = playbackCtxRef.current
+    if (ctx.state === 'suspended') ctx.resume()
 
     const int16 = new Int16Array(data)
     const float32 = new Float32Array(int16.length)
@@ -174,16 +189,16 @@ export function useVoiceSession(): UseVoiceSessionReturn {
       float32[i] = int16[i] / 32768
     }
 
-    const buffer = ctx.createBuffer(1, float32.length, 16000)
+    const buffer = ctx.createBuffer(1, float32.length, 24000)
     buffer.copyToChannel(float32, 0)
 
     const source = ctx.createBufferSource()
     source.buffer = buffer
     source.connect(ctx.destination)
     // Chain buffers sequentially: start each frame after the previous one ends
-    const startTime = Math.max(ctx.currentTime, nextPlayTimeRef.current)
+    const startTime = Math.max(ctx.currentTime, nextPlaybackTimeRef.current)
     source.start(startTime)
-    nextPlayTimeRef.current = startTime + buffer.duration
+    nextPlaybackTimeRef.current = startTime + buffer.duration
   }, [])
 
   // ── Connect ───────────────────────────────────────────────────────────────

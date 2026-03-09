@@ -9,7 +9,8 @@ from strands import tool
 
 logger = logging.getLogger(__name__)
 
-AUDIO_SAMPLE_RATE = 16_000  # Hz — must match agent.py provider_config and frontend TARGET_RATE
+AUDIO_SAMPLE_RATE = 16_000   # Hz — browser capture rate; must match frontend TARGET_RATE
+AUDIO_OUTPUT_RATE = 24_000   # Hz — Nova Sonic native output rate; frontend playback must match
 
 _MAX_CONTENT_CHARS = 4_000
 _http_client = httpx.AsyncClient(timeout=10.0)

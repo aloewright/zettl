@@ -5,7 +5,7 @@ import os
 from strands.experimental.bidi import BidiAgent
 from strands.experimental.bidi.models import BidiNovaSonicModel
 
-from tools import AUDIO_SAMPLE_RATE, get_note, search_notes
+from tools import AUDIO_OUTPUT_RATE, AUDIO_SAMPLE_RATE, get_note, search_notes
 
 _SYSTEM_PROMPT = """\
 You are a knowledgebase assistant for a personal Zettelkasten note system.
@@ -15,7 +15,7 @@ Always cite the note titles you used to answer. Keep answers concise and \
 conversational — this is a voice interface.\
 """
 
-_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.nova-sonic-v2:0")
+_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.nova-2-sonic-v1:0")
 _VOICE_NAME = os.getenv("NOVA_SONIC_VOICE", "matthew")
 _VAD_SENSITIVITY = os.getenv("NOVA_SONIC_VAD_SENSITIVITY", "LOW")
 _MAX_TOKENS = int(os.getenv("NOVA_SONIC_MAX_TOKENS", "2048"))
@@ -30,8 +30,8 @@ def create_agent() -> BidiAgent:
         model_id=_MODEL_ID,
         provider_config={
             "audio": {
-                "input_rate": AUDIO_SAMPLE_RATE,
-                "output_rate": AUDIO_SAMPLE_RATE,
+                "input_rate": AUDIO_SAMPLE_RATE,   # 16kHz — matches browser capture
+                "output_rate": AUDIO_OUTPUT_RATE,  # 24kHz — Nova Sonic native output rate
                 "voice": _VOICE_NAME,
             },
             "turn_detection": {
