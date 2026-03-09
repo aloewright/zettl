@@ -20,8 +20,9 @@ from strands.experimental.bidi import (  # noqa: E402
     BidiResponseCompleteEvent,
     BidiResponseStartEvent,
     BidiTranscriptStreamEvent,
+    ToolResultEvent,
+    ToolUseStreamEvent,
 )
-from strands.experimental.bidi.tools import ToolResultEvent, ToolUseStreamEvent  # noqa: E402
 
 from agent import create_agent  # noqa: E402
 from tools import AUDIO_SAMPLE_RATE, extract_citations, get_note, search_notes  # noqa: E402, F401
