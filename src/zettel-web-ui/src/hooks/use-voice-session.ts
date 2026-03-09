@@ -317,11 +317,18 @@ export function useVoiceSession(): UseVoiceSessionReturn {
     analyserRef.current = analyser
     source.connect(analyser)
 
-    // AudioContext runs at 16kHz so no manual downsampling is needed
+    // AudioContext runs at 16kHz so no manual downsampling is needed.
+    // The processor must be connected to destination to keep onaudioprocess firing,
+    // but routing mic audio directly to the speakers triggers the browser's AEC which
+    // cancels the mic signal (peak amplitude → 0). A muted gain node keeps the processor
+    // in the audio graph without any audible output, so AEC has nothing to cancel.
     const processor = audioCtx.createScriptProcessor(512, 1, 1)
     processorRef.current = processor
     source.connect(processor)
-    processor.connect(audioCtx.destination)
+    const silentGain = audioCtx.createGain()
+    silentGain.gain.value = 0
+    processor.connect(silentGain)
+    silentGain.connect(audioCtx.destination)
 
     processor.onaudioprocess = (e) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return
