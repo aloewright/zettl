@@ -27,6 +27,7 @@ import type {
   ContentGeneration,
   ContentPiece,
   ContentPieceStatus,
+  SourceNoteInfo,
 } from '@/api/types'
 
 type StatusFilter = 'all' | 'Pending' | 'Approved' | 'Rejected'
@@ -347,6 +348,33 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
   )
 })
 
+function SourceNoteCard({ note }: { note: SourceNoteInfo }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-md border border-border/40">
+      <button
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-foreground/80 hover:text-foreground"
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="truncate">{note.title}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border/30 px-3 py-2">
+          <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground/70">
+            {note.content}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function GenerationCard({ generation }: { generation: ContentGeneration }) {
   const [expanded, setExpanded] = useState(false)
   const queryClient = useQueryClient()
@@ -491,6 +519,17 @@ function GenerationCard({ generation }: { generation: ContentGeneration }) {
               </h3>
               {socialPieces.map((piece) => (
                 <PieceCard key={piece.id} piece={piece} />
+              ))}
+            </div>
+          )}
+
+          {detailQuery.data?.sourceNotes && detailQuery.data.sourceNotes.length > 0 && (
+            <div className={`space-y-2 ${pieces.length > 0 ? 'mt-4' : ''}`}>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Source Notes ({detailQuery.data.sourceNotes.length})
+              </h3>
+              {detailQuery.data.sourceNotes.map((note) => (
+                <SourceNoteCard key={note.id} note={note} />
               ))}
             </div>
           )}

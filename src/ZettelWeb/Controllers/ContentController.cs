@@ -19,6 +19,9 @@ public record ContentGenerationResponse(
     DateTime GeneratedAt,
     DateTime? ReviewedAt);
 
+/// <summary>A note that contributed to a content generation.</summary>
+public record SourceNoteResponse(string Id, string Title, string Content);
+
 /// <summary>Response DTO for a content generation run with its pieces.</summary>
 public record GenerationWithPiecesResponse(
     string Id,
@@ -28,7 +31,8 @@ public record GenerationWithPiecesResponse(
     GenerationStatus Status,
     DateTime GeneratedAt,
     DateTime? ReviewedAt,
-    List<ContentPieceResponse> Pieces);
+    List<ContentPieceResponse> Pieces,
+    List<SourceNoteResponse> SourceNotes);
 
 /// <summary>Response DTO for a content piece.</summary>
 public record ContentPieceResponse(
@@ -219,7 +223,7 @@ public partial class ContentController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Get a content generation run with its content pieces.</summary>
+    /// <summary>Get a content generation run with its content pieces and source notes.</summary>
     [HttpGet("generations/{id}")]
     [ProducesResponseType<GenerationWithPiecesResponse>(200)]
     [ProducesResponseType(404)]
@@ -233,7 +237,13 @@ public partial class ContentController : ControllerBase
         if (generation is null)
             return NotFound();
 
-        return Ok(MapGenerationWithPieces(generation));
+        var sourceNotes = await _db.Notes
+            .AsNoTracking()
+            .Where(n => generation.ClusterNoteIds.Contains(n.Id))
+            .Select(n => new SourceNoteResponse(n.Id, n.Title, n.Content))
+            .ToListAsync();
+
+        return Ok(MapGenerationWithPieces(generation, sourceNotes));
     }
 
     /// <summary>List content pieces with optional filtering.</summary>
@@ -464,10 +474,12 @@ public partial class ContentController : ControllerBase
         new(g.Id, g.SeedNoteId, g.ClusterNoteIds, g.TopicSummary,
             g.Status, g.GeneratedAt, g.ReviewedAt);
 
-    private static GenerationWithPiecesResponse MapGenerationWithPieces(ContentGeneration g) =>
+    private static GenerationWithPiecesResponse MapGenerationWithPieces(
+        ContentGeneration g, List<SourceNoteResponse> sourceNotes) =>
         new(g.Id, g.SeedNoteId, g.ClusterNoteIds, g.TopicSummary,
             g.Status, g.GeneratedAt, g.ReviewedAt,
-            g.Pieces.Select(MapPiece).ToList());
+            g.Pieces.Select(MapPiece).ToList(),
+            sourceNotes);
 
     private static ContentPieceResponse MapPiece(ContentPiece p) =>
         new(p.Id, p.GenerationId, p.Medium, p.Title, p.Body,

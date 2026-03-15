@@ -153,6 +153,12 @@ export type ContentPieceStatus = 'Draft' | 'Approved' | 'Rejected'
 
 export type ContentMedium = 'blog' | 'social'
 
+export interface SourceNoteInfo {
+  id: string
+  title: string
+  content: string
+}
+
 export interface ContentGeneration {
   id: string
   seedNoteId: string
@@ -162,6 +168,7 @@ export interface ContentGeneration {
   generatedAt: string
   reviewedAt: string | null
   pieces?: ContentPiece[]
+  sourceNotes?: SourceNoteInfo[]
 }
 
 export interface ContentPiece {
