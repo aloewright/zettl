@@ -7,6 +7,6 @@ queue = "zettel-capture"
 max_batch_size = 10
 max_batch_timeout = 30
 
-# Required secrets (set via `wrangler secret put`):
-#   BACKEND_URL     — base URL of the backend, e.g. https://api.yourdomain.com
-#   WEBHOOK_SECRET  — matches Capture:WebhookSecret in backend appsettings
+# ── Secrets (set via CLI — never stored here) ─────────────────────────────────
+# wrangler secret put BACKEND_URL     --name zettel-capture-queue
+# wrangler secret put WEBHOOK_SECRET  --name zettel-capture-queue

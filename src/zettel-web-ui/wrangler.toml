@@ -2,13 +2,10 @@ name = "zettel-web-ui"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
 
-# Environment variables are set in the Cloudflare Pages dashboard
-# under Settings → Environment variables. Do NOT put secrets here.
-#
-# Required variables (set in dashboard):
-#   BACKEND_URL            — backend base URL, e.g. https://api.yourdomain.com
-#   VITE_COGNITO_CLIENT_ID — AWS Cognito App Client ID
-#   VITE_COGNITO_DOMAIN    — https://{pool-domain}.auth.{region}.amazoncognito.com
-#
-# Optional:
-#   VITE_VOICE_SERVICE_URL — voice service base URL if deployed separately
+# ── Secrets (set via CLI or Pages dashboard — never stored here) ──────────────
+# wrangler pages secret put KINDE_CLIENT_ID             --project-name zettel-web-ui
+# wrangler pages secret put KINDE_CLIENT_SECRET         --project-name zettel-web-ui
+# wrangler pages secret put KINDE_ISSUER_URL            --project-name zettel-web-ui
+# wrangler pages secret put KINDE_POST_LOGIN_REDIRECT_URL  --project-name zettel-web-ui
+# wrangler pages secret put KINDE_POST_LOGOUT_REDIRECT_URL --project-name zettel-web-ui
+# wrangler pages secret put BACKEND_URL                 --project-name zettel-web-ui

@@ -120,6 +120,17 @@ builder.Services.AddScoped<ISearchService>(sp =>
         searchWeights,
         sp.GetRequiredService<ILogger<SearchService>>()));
 
+// ── Cloudflare AI Gateway ─────────────────────────────────
+// When set, all OpenAI API calls are routed through the gateway for
+// caching, rate limiting, and observability.
+// Format: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_name}
+var aiGatewayUrl = builder.Configuration["Cloudflare:AiGatewayUrl"]?.TrimEnd('/');
+
+OpenAIClientOptions BuildOpenAiOptions() =>
+    string.IsNullOrEmpty(aiGatewayUrl)
+        ? new OpenAIClientOptions()
+        : new OpenAIClientOptions { Endpoint = new Uri($"{aiGatewayUrl}/openai") };
+
 var embeddingProvider = builder.Configuration["Embedding:Provider"] ?? "openai";
 var embeddingModel = builder.Configuration["Embedding:Model"] ?? "text-embedding-3-large";
 
@@ -139,7 +150,9 @@ else
 {
     var apiKey = builder.Configuration["Embedding:ApiKey"] ?? "";
     builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
-        new OpenAIClient(apiKey).GetEmbeddingClient(embeddingModel).AsIEmbeddingGenerator());
+        new OpenAIClient(apiKey, BuildOpenAiOptions())
+            .GetEmbeddingClient(embeddingModel)
+            .AsIEmbeddingGenerator());
 }
 
 builder.Services.AddHostedService<EmbeddingBackgroundService>();
@@ -159,11 +172,10 @@ builder.Services.AddHostedService<EnrichmentBackgroundService>();
 builder.Services.Configure<ContentGenerationOptions>(
     builder.Configuration.GetSection(ContentGenerationOptions.SectionName));
 
-var cgProvider = builder.Configuration["ContentGeneration:Provider"] ?? "openai";
 var cgModel = builder.Configuration["ContentGeneration:Model"] ?? "gpt-4o";
 var cgApiKey = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
 builder.Services.AddSingleton<IChatClient>(
-    new OpenAIClient(cgApiKey).GetChatClient(cgModel).AsIChatClient());
+    new OpenAIClient(cgApiKey, BuildOpenAiOptions()).GetChatClient(cgModel).AsIChatClient());
 
 builder.Services.AddScoped<IContentGenerationService, ContentGenerationService>();
 

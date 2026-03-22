@@ -11,26 +11,47 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   backend:
-    image: ghcr.io/jeastham1993/zettel-system/backend:${VERSION:-latest}
+    image: ghcr.io/aloewright/zettl/backend:${VERSION:-latest}
     environment:
       ConnectionStrings__DefaultConnection: "Host=db;Database=zettelweb;Username=zettel;Password=zettel_dev"
-      # Optional OTEL endpoint if you want to send OTEL trace, log and metric data to an OpenTelemetry collector.
+      # Optional OTEL endpoint
       # Otel__Endpoint: "http://host.docker.internal:4317"
-      Embedding__Provider: "${EMBEDDING_PROVIDER:-ollama}"
-      Embedding__ApiKey: "${EMBEDDING_API_KEY:-}"
-      Embedding__Model: "${EMBEDDING_MODEL:-nomic-embed-text}"
-      Embedding__OllamaUrl: "${EMBEDDING_OLLAMA_URL:-http://host.docker.internal:11434}"
-      # Capture settings are if you have deployed the optional capture service and want to enable it. If you don't set these, the capture service will be disabled.
-      Capture__SqsQueueUrl: ${CAPTURE_SQS_QUEUE_URL:-}
-      Capture__SqsRegion: "eu-west-1"
-      Capture__AllowedEmailSenders__0: ${CAPTURE_ALLOWED_EMAIL_SENDERS_0:-}
-      Capture__AllowedTelegramChatIds__0: ${CAPTURE_ALLOWED_TELEGRAM_CHAT_IDS_0:-}
-      Capture__TelegramBotToken: ${TELEGRAM_BOT_TOKEN:-}
-      # Required if you are using the AWS deployed capture service
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      # CORS settings to allow access
-      Cors__AllowedOrigins__0: "http://localhost:8081"
+
+      # ── Kinde JWT authentication ──────────────────────────────────────────────
+      # Set Kinde__Domain to enable JWT validation. Leave empty to disable auth
+      # (e.g. for local development behind a VPN).
+      Kinde__Domain: "${KINDE_ISSUER_URL:-}"
+      Kinde__Audience: "${KINDE_AUDIENCE:-}"
+
+      # ── AI — Cloudflare AI Gateway (optional but recommended) ─────────────────
+      # Route all OpenAI calls through Cloudflare AI Gateway for caching,
+      # rate limiting, and observability.
+      # Create a gateway at: dash.cloudflare.com → AI Gateway → Create gateway
+      # Then set the URL to: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_name}
+      Cloudflare__AiGatewayUrl: "${CF_AI_GATEWAY_URL:-}"
+
+      # ── Embedding ─────────────────────────────────────────────────────────────
+      # Provider: "openai" (default) or "ollama" (local)
+      Embedding__Provider: "${EMBEDDING_PROVIDER:-openai}"
+      Embedding__ApiKey: "${OPENAI_API_KEY:-}"
+      Embedding__Model: "${EMBEDDING_MODEL:-text-embedding-3-large}"
+      Embedding__Dimensions: "${EMBEDDING_DIMENSIONS:-3072}"
+      # Ollama (only used when Provider=ollama)
+      Embedding__OllamaUrl: "${OLLAMA_URL:-http://host.docker.internal:11434}"
+
+      # ── Content generation ────────────────────────────────────────────────────
+      ContentGeneration__Provider: "openai"
+      ContentGeneration__ApiKey: "${OPENAI_API_KEY:-}"
+      ContentGeneration__Model: "${CONTENT_MODEL:-gpt-4o}"
+
+      # ── Capture webhooks (optional) ───────────────────────────────────────────
+      Capture__WebhookSecret: "${CAPTURE_WEBHOOK_SECRET:-}"
+      Capture__AllowedEmailSenders__0: "${CAPTURE_ALLOWED_EMAIL_SENDERS_0:-}"
+      Capture__AllowedTelegramChatIds__0: "${CAPTURE_ALLOWED_TELEGRAM_CHAT_IDS_0:-}"
+      Capture__TelegramBotToken: "${TELEGRAM_BOT_TOKEN:-}"
+
+      # ── CORS ──────────────────────────────────────────────────────────────────
+      Cors__AllowedOrigins__0: "${CORS_ORIGIN:-http://localhost:8081}"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend.rule=PathPrefix(`/api`) || PathPrefix(`/health`)"
@@ -44,7 +65,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   frontend:
-    image: ghcr.io/jeastham1993/zettel-system/frontend:${VERSION:-latest}
+    image: ghcr.io/aloewright/zettl/frontend:${VERSION:-latest}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
