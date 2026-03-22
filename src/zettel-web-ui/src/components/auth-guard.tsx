@@ -1,35 +1,37 @@
 import { useEffect, useState } from 'react'
-import { isAuthenticated, redirectToLogin } from '@/auth'
+import { getUser, redirectToLogin } from '@/auth'
 
 interface AuthGuardProps {
   children: React.ReactNode
 }
 
-// Auth is only active when Cognito is configured (AWS deployment).
-// Docker Compose deployments omit these env vars and bypass auth entirely.
-const authEnabled = !!import.meta.env.VITE_COGNITO_CLIENT_ID
+// Auth is only active when Kinde is configured (Cloudflare Pages deployment).
+// Docker Compose deployments skip auth when VITE_AUTH_DISABLED=true.
+const authDisabled = import.meta.env.VITE_AUTH_DISABLED === 'true'
 
 /**
- * Wraps the entire app. If no valid access token exists in sessionStorage,
- * redirects to the Cognito Hosted UI login page.
+ * Wraps the entire app. Calls /api/auth/me to verify the session cookie.
+ * If unauthenticated, redirects to /api/auth/login (Kinde Hosted UI).
  *
- * When VITE_COGNITO_CLIENT_ID is not set (e.g. Docker Compose), auth is
- * skipped and children are rendered immediately.
+ * When VITE_AUTH_DISABLED=true (Docker Compose), auth is skipped and
+ * children are rendered immediately.
  *
  * The /callback route is rendered before this component (in the router),
  * so it is never blocked by the auth guard.
  */
 export function AuthGuard({ children }: AuthGuardProps) {
-  const [checked, setChecked] = useState(!authEnabled)
+  const [checked, setChecked] = useState(authDisabled)
 
   useEffect(() => {
-    if (!authEnabled) return
-    if (isAuthenticated()) {
-      setChecked(true)
-    } else {
-      // Fire and forget — browser navigates away
-      redirectToLogin().catch(console.error)
-    }
+    if (authDisabled) return
+
+    getUser().then(user => {
+      if (user) {
+        setChecked(true)
+      } else {
+        redirectToLogin().catch(console.error)
+      }
+    })
   }, [])
 
   if (!checked) {

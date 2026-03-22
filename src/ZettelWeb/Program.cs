@@ -1,9 +1,9 @@
 using System.Threading.RateLimiting;
-using Amazon.BedrockRuntime;
-using Amazon.SQS;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using OllamaSharp;
 using OpenAI;
@@ -135,16 +135,6 @@ if (string.Equals(embeddingProvider, "ollama", StringComparison.OrdinalIgnoreCas
     builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
         new OllamaApiClient(ollamaHttpClient, embeddingModel));
 }
-else if (string.Equals(embeddingProvider, "bedrock", StringComparison.OrdinalIgnoreCase))
-{
-    var bedrockRegion = builder.Configuration["Embedding:BedrockRegion"];
-    var client = !string.IsNullOrEmpty(bedrockRegion)
-        ? new AmazonBedrockRuntimeClient(Amazon.RegionEndpoint.GetBySystemName(bedrockRegion))
-        : new AmazonBedrockRuntimeClient();
-    var dimensions = builder.Configuration.GetValue<int?>("Embedding:Dimensions");
-    builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
-        client.AsIEmbeddingGenerator(embeddingModel, dimensions));
-}
 else
 {
     var apiKey = builder.Configuration["Embedding:ApiKey"] ?? "";
@@ -152,14 +142,7 @@ else
         new OpenAIClient(apiKey).GetEmbeddingClient(embeddingModel).AsIEmbeddingGenerator());
 }
 
-// In Lambda, background services are replaced by separate Lambda functions.
-// The AWS_LAMBDA_FUNCTION_NAME env var is set automatically by the Lambda runtime.
-var isLambda = !string.IsNullOrEmpty(builder.Configuration["AWS_LAMBDA_FUNCTION_NAME"]);
-
-if (!isLambda)
-{
-    builder.Services.AddHostedService<EmbeddingBackgroundService>();
-}
+builder.Services.AddHostedService<EmbeddingBackgroundService>();
 
 builder.Services.AddHttpClient("Enrichment");
 builder.Services.Configure<ResearchOptions>(builder.Configuration.GetSection(ResearchOptions.SectionName));
@@ -169,38 +152,18 @@ builder.Services.AddSingleton<IWebSearchClient, BraveSearchClient>();
 builder.Services.AddSingleton<IArxivClient, ArxivApiClient>();
 builder.Services.AddScoped<IResearchAgentService, ResearchAgentService>();
 builder.Services.AddSingleton<IResearchExecutionQueue, ChannelResearchExecutionQueue>();
-if (!isLambda)
-{
-    builder.Services.AddHostedService<ResearchExecutionBackgroundService>();
-}
-
-if (!isLambda)
-{
-    builder.Services.AddHostedService<EnrichmentBackgroundService>();
-}
+builder.Services.AddHostedService<ResearchExecutionBackgroundService>();
+builder.Services.AddHostedService<EnrichmentBackgroundService>();
 
 // ── Content Generation LLM (IChatClient) ─────────────────────
 builder.Services.Configure<ContentGenerationOptions>(
     builder.Configuration.GetSection(ContentGenerationOptions.SectionName));
 
-var cgProvider = builder.Configuration["ContentGeneration:Provider"] ?? "bedrock";
-var cgModel = builder.Configuration["ContentGeneration:Model"]
-    ?? "anthropic.claude-3-5-sonnet-20241022-v2:0";
-
-if (string.Equals(cgProvider, "bedrock", StringComparison.OrdinalIgnoreCase))
-{
-    var cgRegion = builder.Configuration["ContentGeneration:Region"];
-    var bedrockClient = !string.IsNullOrEmpty(cgRegion)
-        ? new AmazonBedrockRuntimeClient(Amazon.RegionEndpoint.GetBySystemName(cgRegion))
-        : new AmazonBedrockRuntimeClient();
-    builder.Services.AddSingleton<IChatClient>(bedrockClient.AsIChatClient(cgModel));
-}
-else
-{
-    var cgApiKey = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
-    builder.Services.AddSingleton<IChatClient>(
-        new OpenAIClient(cgApiKey).GetChatClient(cgModel).AsIChatClient());
-}
+var cgProvider = builder.Configuration["ContentGeneration:Provider"] ?? "openai";
+var cgModel = builder.Configuration["ContentGeneration:Model"] ?? "gpt-4o";
+var cgApiKey = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
+builder.Services.AddSingleton<IChatClient>(
+    new OpenAIClient(cgApiKey).GetChatClient(cgModel).AsIChatClient());
 
 builder.Services.AddScoped<IContentGenerationService, ContentGenerationService>();
 
@@ -224,48 +187,45 @@ else
     builder.Services.AddSingleton<ITelegramNotifier, NullTelegramNotifier>();
 }
 
-if (!isLambda)
+if (string.Equals(
+    builder.Configuration["ContentGeneration:Schedule:Blog:Enabled"], "true",
+    StringComparison.OrdinalIgnoreCase))
 {
-    if (string.Equals(
-        builder.Configuration["ContentGeneration:Schedule:Blog:Enabled"], "true",
-        StringComparison.OrdinalIgnoreCase))
-    {
-        builder.Services.AddHostedService<BlogContentScheduler>();
-    }
-
-    if (string.Equals(
-        builder.Configuration["ContentGeneration:Schedule:Social:Enabled"], "true",
-        StringComparison.OrdinalIgnoreCase))
-    {
-        builder.Services.AddHostedService<SocialContentScheduler>();
-    }
+    builder.Services.AddHostedService<BlogContentScheduler>();
 }
 
-var sqsQueueUrl = builder.Configuration["Capture:SqsQueueUrl"];
-if (!string.IsNullOrEmpty(sqsQueueUrl))
+if (string.Equals(
+    builder.Configuration["ContentGeneration:Schedule:Social:Enabled"], "true",
+    StringComparison.OrdinalIgnoreCase))
 {
-    var sqsRegion = builder.Configuration["Capture:SqsRegion"];
-    if (!string.IsNullOrEmpty(sqsRegion))
-    {
-        builder.Services.AddSingleton<IAmazonSQS>(_ =>
-            new AmazonSQSClient(Amazon.RegionEndpoint.GetBySystemName(sqsRegion)));
-    }
-    else
-    {
-        builder.Services.AddSingleton<IAmazonSQS, AmazonSQSClient>();
-    }
-    builder.Services.AddSingleton<SqsPollingBackgroundService>();
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<SqsPollingBackgroundService>());
+    builder.Services.AddHostedService<SocialContentScheduler>();
 }
 
-var healthChecks = builder.Services.AddHealthChecks()
+// ── Kinde JWT Authentication ───────────────────────────────
+var kindeDomain = builder.Configuration["Kinde:Domain"] ?? "";
+var kindeAudience = builder.Configuration["Kinde:Audience"] ?? "";
+
+if (!string.IsNullOrEmpty(kindeDomain))
+{
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.Authority = kindeDomain;
+            options.Audience = kindeAudience;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = kindeDomain,
+                ValidateAudience = !string.IsNullOrEmpty(kindeAudience),
+                ValidateLifetime = true,
+            };
+        });
+    builder.Services.AddAuthorization();
+}
+
+builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database")
     .AddCheck<EmbeddingHealthCheck>("embedding");
-
-if (!string.IsNullOrEmpty(sqsQueueUrl))
-{
-    healthChecks.AddCheck<SqsPollingHealthCheck>("sqs-polling");
-}
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
@@ -298,15 +258,8 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// Migrations and HNSW index creation are handled by the MigrationLambda,
-// which is invoked once by Terraform (aws_lambda_invocation) during deployment.
-// Running migrations at startup is unsafe in Lambda: multiple concurrent cold starts
-// would all attempt to acquire the migration lock simultaneously.
-// For local development and Docker Compose, the MigrationHandler can be invoked
-// directly: dotnet run --project ZettelWeb -- --migrate
-if (!isLambda)
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ZettelDbContext>();
     db.Database.Migrate();
 
@@ -336,7 +289,18 @@ startupLogger.LogInformation(
 
 app.UseCors();
 app.UseRateLimiter();
-app.MapControllers();
+
+if (!string.IsNullOrEmpty(kindeDomain))
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapControllers().RequireAuthorization();
+}
+else
+{
+    app.MapControllers();
+}
+
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
 {

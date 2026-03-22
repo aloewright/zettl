@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -10,10 +11,12 @@ namespace ZettelWeb.Controllers;
 // https://api.telegram.org/bot<token>/setWebhook?url=https://<domain>/api/capture/telegram
 
 /// <summary>Webhook endpoints for capturing notes via email and Telegram.</summary>
+/// <remarks>Uses X-Webhook-Secret / X-Telegram-Bot-Api-Secret-Token for auth instead of JWT.</remarks>
 [ApiController]
 [Route("api/capture")]
 [EnableRateLimiting("capture")]
 [Produces("application/json")]
+[AllowAnonymous]
 public class CaptureController : ControllerBase
 {
     private readonly CaptureService _captureService;

@@ -1,122 +1,73 @@
 /**
- * Cognito PKCE authentication module.
+ * Kinde authentication module — server-side session via Cloudflare Pages Functions.
  *
- * Flow:
- *   1. App loads → isAuthenticated() check
- *   2. No token → redirectToLogin() → Cognito Hosted UI
- *   3. User logs in → Cognito redirects to /callback?code=...
- *   4. handleCallback(code) exchanges code for tokens → stored in sessionStorage
- *   5. All API calls include Authorization: Bearer <access_token>
- *   6. On 401 → redirectToLogin() re-runs the flow
+ * Auth is handled by Pages Functions at /api/auth/*:
+ *   GET /api/auth/login          → redirects to Kinde Hosted UI
+ *   GET /api/auth/kinde_callback → exchanges code for tokens, sets httpOnly cookie
+ *   GET /api/auth/logout         → clears cookie, redirects to Kinde logout
+ *   GET /api/auth/me             → returns { authenticated, user } from session cookie
  *
- * Environment variables (set from terraform outputs in CI/CD):
- *   VITE_COGNITO_CLIENT_ID  — Cognito App Client ID
- *   VITE_COGNITO_DOMAIN     — https://{pool-domain}.auth.{region}.amazoncognito.com
+ * The access token lives in an httpOnly cookie (kinde_session) set by the
+ * Pages Function, so it is never accessible from JS. The backend receives it
+ * automatically on every /api/* request via the Pages Function proxy, which
+ * forwards the Authorization header extracted from the cookie.
+ *
+ * Environment variables (Cloudflare Pages dashboard):
+ *   KINDE_CLIENT_ID              — Kinde Application Client ID
+ *   KINDE_CLIENT_SECRET          — Kinde Application Client Secret
+ *   KINDE_ISSUER_URL             — https://aftuh.kinde.com
+ *   KINDE_POST_LOGIN_REDIRECT_URL  — https://postpilot.cc/dashboard
+ *   KINDE_POST_LOGOUT_REDIRECT_URL — https://postpilot.cc
  */
 
-const CLIENT_ID = import.meta.env.VITE_COGNITO_CLIENT_ID as string
-const COGNITO_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN as string
-// Evaluated lazily so module import works in non-browser environments (e.g. tests)
-const getRedirectUri = () => `${window.location.origin}/callback`
-
-// ── PKCE helpers ─────────────────────────────────────────────────────────────
-
-function generateRandomBytes(length: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(length))
+export interface KindeUser {
+  sub: string
+  email?: string
+  given_name?: string
+  family_name?: string
+  [key: string]: unknown
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
+interface MeResponse {
+  authenticated: boolean
+  user?: KindeUser
 }
 
-async function generateCodeVerifier(): Promise<string> {
-  return base64UrlEncode(generateRandomBytes(32))
-}
+let _cachedUser: KindeUser | null | undefined = undefined // undefined = not yet fetched
 
-async function generateCodeChallenge(verifier: string): Promise<string> {
-  const data = new TextEncoder().encode(verifier)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return base64UrlEncode(new Uint8Array(digest))
-}
+export async function getUser(): Promise<KindeUser | null> {
+  if (_cachedUser !== undefined) return _cachedUser
 
-// ── Token storage ─────────────────────────────────────────────────────────────
-// sessionStorage: tokens cleared when the browser tab is closed.
-
-const STORAGE_KEYS = {
-  accessToken: 'auth_access_token',
-  refreshToken: 'auth_refresh_token',
-  pkceVerifier: 'auth_pkce_verifier',
-} as const
-
-export function getToken(): string | null {
-  return sessionStorage.getItem(STORAGE_KEYS.accessToken)
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
+    if (!res.ok) {
+      _cachedUser = null
+      return null
+    }
+    const data = (await res.json()) as MeResponse
+    _cachedUser = data.authenticated && data.user ? data.user : null
+    return _cachedUser
+  } catch {
+    _cachedUser = null
+    return null
+  }
 }
 
 export function isAuthenticated(): boolean {
-  return getToken() !== null
+  return _cachedUser !== null && _cachedUser !== undefined
 }
-
-function storeTokens(accessToken: string, refreshToken: string): void {
-  sessionStorage.setItem(STORAGE_KEYS.accessToken, accessToken)
-  sessionStorage.setItem(STORAGE_KEYS.refreshToken, refreshToken)
-}
-
-// ── Auth actions ──────────────────────────────────────────────────────────────
 
 export async function redirectToLogin(): Promise<void> {
-  const verifier = await generateCodeVerifier()
-  const challenge = await generateCodeChallenge(verifier)
-
-  sessionStorage.setItem(STORAGE_KEYS.pkceVerifier, verifier)
-
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: CLIENT_ID,
-    redirect_uri: getRedirectUri(),
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    scope: 'openid email',
-  })
-
-  window.location.href = `${COGNITO_DOMAIN}/oauth2/authorize?${params}`
+  window.location.href = '/api/auth/login'
 }
 
-export async function handleCallback(code: string): Promise<void> {
-  const verifier = sessionStorage.getItem(STORAGE_KEYS.pkceVerifier)
-  if (!verifier) {
-    throw new Error('PKCE verifier missing — restart the login flow')
-  }
-
-  const response = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      redirect_uri: getRedirectUri(),
-      code,
-      code_verifier: verifier,
-    }),
-  })
-
-  if (!response.ok) {
-    const error = await response.text().catch(() => 'unknown error')
-    throw new Error(`Token exchange failed: ${error}`)
-  }
-
-  const tokens = await response.json()
-  storeTokens(tokens.access_token, tokens.refresh_token)
-  sessionStorage.removeItem(STORAGE_KEYS.pkceVerifier)
-}
-
+/** Clears cached user and redirects to /api/auth/logout. */
 export function logout(): void {
-  sessionStorage.clear()
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    logout_uri: window.location.origin + '/',
-  })
-  window.location.href = `${COGNITO_DOMAIN}/logout?${params}`
+  _cachedUser = undefined
+  window.location.href = '/api/auth/logout'
+}
+
+/** Returns a no-op token getter — the session cookie is sent automatically. */
+export function getToken(): string | null {
+  return null
 }
