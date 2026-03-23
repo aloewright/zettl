@@ -60,6 +60,15 @@ app.route('/api/tts', ttsRouter)
 
 app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() }))
 
+// ── SPA fallback ────────────────────────────────────────────────────────────
+// Any non-API route that wasn't matched by static assets → serve index.html
+
+app.get('*', async (c) => {
+  const url = new URL(c.req.url)
+  url.pathname = '/index.html'
+  return c.env.ASSETS.fetch(new Request(url.toString(), c.req.raw))
+})
+
 // ── Queue consumer ─────────────────────────────────────────────────────────────
 
 async function queue(

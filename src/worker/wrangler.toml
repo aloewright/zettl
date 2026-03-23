@@ -4,6 +4,11 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 logpush = true
 
+[assets]
+directory = "../zettel-web-ui/dist"
+binding = "ASSETS"
+not_found_handling = "none"
+
 [[queues.consumers]]
 queue = "zettel-embeddings"
 max_batch_size = 10

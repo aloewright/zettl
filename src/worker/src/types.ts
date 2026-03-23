@@ -15,6 +15,8 @@ export interface Env {
   // Queue bindings
   EMBED_QUEUE: Queue<EmbedQueueMessage>
   ENRICH_QUEUE: Queue<EnrichQueueMessage>
+  // Static assets binding
+  ASSETS: Fetcher
 }
 
 /** Resolve an optional SecretsStoreSecret, returning undefined if unbound or missing. */
