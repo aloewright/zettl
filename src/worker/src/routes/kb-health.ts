@@ -49,7 +49,7 @@ router.get('/overview', async (c) => {
          AND n2."Embedding" IS NOT NULL
          AND n."Embedding" IS NOT NULL
          AND n2."Id" != n."Id"
-         AND (1 - (n."Embedding"::vector(1536) <=> n2."Embedding"::vector(1536))) > 0.5
+         AND (1 - (n."Embedding"::vector(3072) <=> n2."Embedding"::vector(3072))) > 0.5
        LIMIT 5
       )::int AS "suggestionCount"
     FROM "Notes" n
