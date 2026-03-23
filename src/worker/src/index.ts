@@ -12,6 +12,7 @@ import tagsRouter from './routes/tags'
 import voiceRouter from './routes/voice'
 import researchRouter from './routes/research'
 import importExportRouter from './routes/import-export'
+import readwiseRouter from './routes/readwise'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
@@ -51,6 +52,7 @@ app.route('/api/voice', voiceRouter)
 app.route('/api/research', researchRouter)
 app.route('/api/export', importExportRouter)
 app.route('/api/import', importExportRouter)
+app.route('/api/readwise', readwiseRouter)
 
 // ── Health ─────────────────────────────────────────────────────────────────────
 

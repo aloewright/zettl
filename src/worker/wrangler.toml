@@ -76,3 +76,8 @@ secret_name = "TELEGRAM_BOT_TOKEN"
 binding = "BRAVE_API_KEY"
 store_id = "YOUR_STORE_ID"
 secret_name = "BRAVE_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "READWISE_ACCESS_TOKEN"
+store_id = "YOUR_STORE_ID"
+secret_name = "READWISE_ACCESS_TOKEN"

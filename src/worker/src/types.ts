@@ -10,6 +10,7 @@ export interface Env {
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
+  READWISE_ACCESS_TOKEN?: SecretsStoreSecret  // optional binding
   // Queue bindings
   EMBED_QUEUE: Queue<EmbedQueueMessage>
   ENRICH_QUEUE: Queue<EnrichQueueMessage>
