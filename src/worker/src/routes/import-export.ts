@@ -160,9 +160,13 @@ router.post('/', async (c) => {
           await db.insert(noteTags).values(parsed.tags.map(tag => ({ noteId: id, tag })))
         }
 
-        await c.env.EMBED_QUEUE.send({ noteId: id })
+        // Queue send is best-effort: don't fail the whole import if it errors
+        c.env.EMBED_QUEUE.send({ noteId: id }).catch(err =>
+          console.error(`[import] failed to enqueue ${id}:`, err),
+        )
         imported++
-      } catch {
+      } catch (err) {
+        console.error(`[import] failed to insert "${file.fileName}":`, err)
         skipped++
       }
     }
