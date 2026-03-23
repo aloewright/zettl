@@ -51,26 +51,6 @@ binding = "KINDE_DOMAIN"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "KINDE_DOMAIN"
 
-# Optional — omit the binding entirely if not needed
-[[secrets_store_secrets]]
-binding = "KINDE_AUDIENCE"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "KINDE_AUDIENCE"
-
-[[secrets_store_secrets]]
-binding = "CF_AI_GATEWAY_URL"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "CF_AI_GATEWAY_URL"
-
-[[secrets_store_secrets]]
-binding = "CAPTURE_WEBHOOK_SECRET"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "CAPTURE_WEBHOOK_SECRET"
-
-[[secrets_store_secrets]]
-binding = "TELEGRAM_BOT_TOKEN"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "TELEGRAM_BOT_TOKEN"
 
 [[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"
