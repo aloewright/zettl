@@ -4,8 +4,6 @@ export interface Env {
   // Cloudflare Secrets Store bindings — access via await env.X.get()
   DATABASE_URL: SecretsStoreSecret
   OPENAI_API_KEY: SecretsStoreSecret
-  KINDE_DOMAIN: SecretsStoreSecret
-  KINDE_AUDIENCE?: SecretsStoreSecret   // optional binding
   CF_AI_GATEWAY_URL?: SecretsStoreSecret // optional binding
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding

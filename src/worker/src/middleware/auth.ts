@@ -1,7 +1,10 @@
 import { createMiddleware } from 'hono/factory'
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { jwtVerify, createRemoteJWKSet } from 'jose'
 import type { HonoEnv } from '../types'
 import { createDb, createSql } from '../db/client'
+
+const CF_ACCESS_CERTS_URL = 'https://worthy.cloudflareaccess.com/cdn-cgi/access/certs'
+const CF_ACCESS_AUD = '7f0d66ab33bd01abc628ce0e605e5715b20c657c64797dd1acc8698306648438'
 
 /**
  * Injects db + sql into context. Must run before any route handler.
@@ -14,46 +17,27 @@ export const dbMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
 })
 
 /**
- * Validates the Kinde JWT from the Authorization header.
- * When KINDE_DOMAIN is not set the middleware is skipped (local dev / Docker).
+ * Validates the Cloudflare Access JWT from Cf-Access-Jwt-Assertion header.
+ * Cloudflare Access gates all traffic — by the time a request reaches the worker
+ * the user has already authenticated via Google OAuth. This middleware extracts
+ * the identity from the signed JWT.
  */
 export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
-  // If KINDE_DOMAIN binding is absent, skip auth (local dev without Secrets Store)
-  if (!c.env.KINDE_DOMAIN) {
+  const token = c.req.header('Cf-Access-Jwt-Assertion')
+
+  // No CF Access header — running locally or Access not configured
+  if (!token) {
     c.set('userId', 'anonymous')
     await next()
     return
   }
 
-  let kindeDomain: string
   try {
-    kindeDomain = await c.env.KINDE_DOMAIN.get()
-  } catch {
-    c.set('userId', 'anonymous')
-    await next()
-    return
-  }
-
-  const authHeader = c.req.header('Authorization')
-  if (!authHeader?.startsWith('Bearer ')) {
-    return c.json({ error: 'Unauthorized' }, 401)
-  }
-
-  const token = authHeader.slice(7)
-
-  try {
-    const kindeAudience = c.env.KINDE_AUDIENCE
-      ? await c.env.KINDE_AUDIENCE.get().catch(() => undefined)
-      : undefined
-
-    const JWKS = createRemoteJWKSet(
-      new URL(`${kindeDomain}/.well-known/jwks`),
-    )
+    const JWKS = createRemoteJWKSet(new URL(CF_ACCESS_CERTS_URL))
     const { payload } = await jwtVerify(token, JWKS, {
-      issuer: kindeDomain,
-      ...(kindeAudience ? { audience: kindeAudience } : {}),
+      audience: CF_ACCESS_AUD,
     })
-    c.set('userId', (payload.sub as string) ?? 'unknown')
+    c.set('userId', (payload.email as string) ?? (payload.sub as string) ?? 'unknown')
   } catch {
     return c.json({ error: 'Unauthorized' }, 401)
   }

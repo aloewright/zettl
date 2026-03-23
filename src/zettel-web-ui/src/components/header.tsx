@@ -33,7 +33,7 @@ export function Header({ onOpenSearch }: HeaderProps) {
     <header className="border-b border-border/50">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:py-4">
         <Link to="/" className="font-serif text-xl font-semibold tracking-tight">
-          Zettel
+          Alex
         </Link>
 
         {/* Desktop navigation */}

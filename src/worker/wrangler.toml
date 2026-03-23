@@ -48,11 +48,6 @@ binding = "OPENAI_API_KEY"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "OPENAI_API_KEY"
 
-[[secrets_store_secrets]]
-binding = "KINDE_DOMAIN"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "KINDE_DOMAIN"
-
 
 [[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"

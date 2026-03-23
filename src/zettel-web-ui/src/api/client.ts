@@ -1,5 +1,3 @@
-import { redirectToLogin } from '../auth'
-
 export class ApiError extends Error {
   status: number
   statusText: string
@@ -13,11 +11,6 @@ export class ApiError extends Error {
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
-  if (response.status === 401) {
-    // Session cookie expired — redirect back to Kinde login
-    await redirectToLogin()
-    throw new ApiError(401, 'Unauthorized', 'Session expired — redirecting to login')
-  }
   if (!response.ok) {
     const body = await response.text().catch(() => '')
     throw new ApiError(response.status, response.statusText, body || undefined)
@@ -61,10 +54,6 @@ export async function del(url: string): Promise<void> {
 
 export async function getBlob(url: string): Promise<Blob> {
   const response = await fetch(url, { credentials: 'same-origin' })
-  if (response.status === 401) {
-    await redirectToLogin()
-    throw new ApiError(401, 'Unauthorized')
-  }
   if (!response.ok) {
     throw new ApiError(response.status, response.statusText)
   }
