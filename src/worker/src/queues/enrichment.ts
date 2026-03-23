@@ -1,5 +1,7 @@
-import { neon } from '@neondatabase/serverless'
+import { eq } from 'drizzle-orm'
 import type { EnrichQueueMessage, Env } from '../types'
+import { createDb } from '../db/client'
+import { notes } from '../db/schema'
 
 interface EnrichmentData {
   title?: string
@@ -49,35 +51,39 @@ export async function handleEnrichMessage(
   message: Message<EnrichQueueMessage>,
   env: Env,
 ): Promise<void> {
-  const sql = neon(await env.DATABASE_URL.get())
+  const db = createDb(env.d1_db)
   const { noteId, url } = message.body
 
-  await sql`
-    UPDATE "Notes" SET "EnrichStatus" = 'Processing' WHERE "Id" = ${noteId}
-  `
+  await db.update(notes)
+    .set({ enrichStatus: 'Processing' })
+    .where(eq(notes.id, noteId))
 
   try {
     const data = await fetchPageMetadata(url)
     const enrichmentJson = JSON.stringify(data)
 
-    await sql`
-      UPDATE "Notes"
-      SET "EnrichmentJson"   = ${enrichmentJson},
-          "EnrichStatus"     = 'Done',
-          "EnrichRetryCount" = 0,
-          "SourceTitle"      = COALESCE("SourceTitle", ${data.title ?? null}),
-          "SourceAuthor"     = COALESCE("SourceAuthor", ${data.author ?? null})
-      WHERE "Id" = ${noteId}
-    `
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
+    // Read current values so we can COALESCE (keep existing if already set)
+    const [current] = await db.select({
+      sourceTitle: notes.sourceTitle,
+      sourceAuthor: notes.sourceAuthor,
+    }).from(notes).where(eq(notes.id, noteId))
 
-    await sql`
-      UPDATE "Notes"
-      SET "EnrichStatus"     = 'Failed',
-          "EnrichRetryCount" = "EnrichRetryCount" + 1
-      WHERE "Id" = ${noteId}
-    `
+    await db.update(notes).set({
+      enrichmentJson,
+      enrichStatus: 'Done',
+      enrichRetryCount: 0,
+      sourceTitle: current?.sourceTitle ?? data.title ?? null,
+      sourceAuthor: current?.sourceAuthor ?? data.author ?? null,
+    }).where(eq(notes.id, noteId))
+
+  } catch (err) {
+    const [current] = await db.select({ enrichRetryCount: notes.enrichRetryCount })
+      .from(notes).where(eq(notes.id, noteId)).catch(() => [])
+
+    await db.update(notes).set({
+      enrichStatus: 'Failed',
+      enrichRetryCount: (current?.enrichRetryCount ?? 0) + 1,
+    }).where(eq(notes.id, noteId))
 
     throw err
   }

@@ -9,7 +9,8 @@ import {
   notes,
   noteTags,
 } from '../db/schema'
-import { buildOpenAI, generateEmbedding, toVectorLiteral } from '../services/embeddings'
+import { buildOpenAI } from '../services/embeddings'
+import { isoNow } from '../types'
 
 const router = new Hono<HonoEnv>()
 
@@ -52,8 +53,6 @@ router.get('/generations/:id', async (c) => {
 
 router.post('/generations', async (c) => {
   const db = c.get('db')
-  const openai = await buildOpenAI(c.env)
-  const rawSql = c.get('sql')
 
   const body = await c.req.json<{
     seedNoteId: string
@@ -67,33 +66,17 @@ router.post('/generations', async (c) => {
 
   const id = makeId()
 
-  // Generate topic embedding
-  let topicEmbedding: number[] = []
-  try {
-    topicEmbedding = await generateEmbedding(openai, body.topicSummary)
-  } catch {
-    // proceed without embedding
-  }
-
   await db.insert(contentGenerations).values({
     id,
     seedNoteId: body.seedNoteId,
     clusterNoteIds: JSON.stringify(body.clusterNoteIds ?? []),
     topicSummary: body.topicSummary,
     status: 'Pending',
+    generatedAt: isoNow(),
   })
 
-  if (topicEmbedding.length) {
-    const vec = toVectorLiteral(topicEmbedding)
-    await rawSql`
-      UPDATE "ContentGenerations"
-      SET "TopicEmbedding" = ${vec}::real[]
-      WHERE "Id" = ${id}
-    `
-  }
-
   // Mark seed note as used
-  await db.insert(usedSeedNotes).values({ noteId: body.seedNoteId })
+  await db.insert(usedSeedNotes).values({ noteId: body.seedNoteId, usedAt: isoNow() })
     .onConflictDoNothing()
 
   const [created] = await db.select().from(contentGenerations)

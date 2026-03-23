@@ -1,59 +1,64 @@
-import { neon } from '@neondatabase/serverless'
+import { eq } from 'drizzle-orm'
 import type { EmbedQueueMessage, Env } from '../types'
-import { buildOpenAI, generateEmbedding, toVectorLiteral } from '../services/embeddings'
+import { isoNow } from '../types'
+import { createDb } from '../db/client'
+import { notes } from '../db/schema'
+import { buildOpenAI, generateEmbedding } from '../services/embeddings'
 
 export async function handleEmbedMessage(
   message: Message<EmbedQueueMessage>,
   env: Env,
 ): Promise<void> {
-  const sql = neon(await env.DATABASE_URL.get())
+  const db = createDb(env.d1_db)
   const { noteId } = message.body
 
   // Mark in-progress
-  await sql`
-    UPDATE "Notes"
-    SET "EmbedStatus" = 'Processing'
-    WHERE "Id" = ${noteId}
-  `
+  await db.update(notes)
+    .set({ embedStatus: 'Processing' })
+    .where(eq(notes.id, noteId))
 
   try {
-    const [note] = await sql`
-      SELECT "Title", "Content" FROM "Notes" WHERE "Id" = ${noteId}
-    ` as { Title: string; Content: string }[]
+    const [note] = await db.select({
+      title: notes.title,
+      content: notes.content,
+    }).from(notes).where(eq(notes.id, noteId))
 
-    if (!note) {
-      // Note was deleted; just ack
-      return
-    }
+    if (!note) return // Note was deleted; just ack
 
     const openai = await buildOpenAI(env)
-    const text = `${note.Title}\n\n${note.Content}`
+    const text = `${note.title}\n\n${note.content}`
     const embedding = await generateEmbedding(openai, text)
-    const vec = toVectorLiteral(embedding)
 
-    await sql`
-      UPDATE "Notes"
-      SET "Embedding"        = ${vec}::real[],
-          "EmbedStatus"      = 'Done',
-          "EmbedError"       = NULL,
-          "EmbedUpdatedAt"   = now(),
-          "EmbeddingModel"   = 'text-embedding-3-large',
-          "EmbedRetryCount"  = 0
-      WHERE "Id" = ${noteId}
-    `
+    // Upsert embedding into Vectorize
+    await env.vector_db.upsert([{
+      id: noteId,
+      values: embedding,
+      metadata: { noteId },
+    }])
+
+    // Update D1 note status
+    await db.update(notes).set({
+      embedStatus: 'Done',
+      embedError: null,
+      embedUpdatedAt: isoNow(),
+      embeddingModel: 'text-embedding-3-large',
+      embedRetryCount: 0,
+    }).where(eq(notes.id, noteId))
+
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
 
-    await sql`
-      UPDATE "Notes"
-      SET "EmbedStatus"      = 'Failed',
-          "EmbedError"       = ${errorMsg},
-          "EmbedRetryCount"  = "EmbedRetryCount" + 1,
-          "EmbedUpdatedAt"   = now()
-      WHERE "Id" = ${noteId}
-    `
+    const [current] = await db.select({ embedRetryCount: notes.embedRetryCount })
+      .from(notes).where(eq(notes.id, noteId)).catch(() => [])
 
-    // Rethrow so the queue retries (up to queue max retries)
+    await db.update(notes).set({
+      embedStatus: 'Failed',
+      embedError: errorMsg,
+      embedRetryCount: (current?.embedRetryCount ?? 0) + 1,
+      embedUpdatedAt: isoNow(),
+    }).where(eq(notes.id, noteId))
+
+    // Rethrow so the queue retries
     throw err
   }
 }

@@ -1,13 +1,12 @@
 import OpenAI from 'openai'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import type { Env } from '../types'
-import { makeId } from '../types'
+import { makeId, isoNow } from '../types'
 import * as schema from '../db/schema'
-import { createDb, createSql } from '../db/client'
+import { createDb } from '../db/client'
 import { buildOpenAI } from '../services/embeddings'
 
 type Db = ReturnType<typeof createDb>
-type RawSql = ReturnType<typeof createSql>
 type Medium = 'Blog' | 'Social'
 
 interface ClusterNote {
@@ -34,27 +33,33 @@ async function pickSeedNote(db: Db, medium: Medium): Promise<ClusterNote | null>
 }
 
 async function findClusterNotes(
-  rawSql: RawSql,
+  vectorize: VectorizeIndex,
+  db: Db,
   seedNote: ClusterNote,
   limit = 5,
 ): Promise<ClusterNote[]> {
-  // Find notes similar to seed via embedding
-  const rows = await rawSql`
-    SELECT n."Id" AS id, n."Title" AS title, n."Content" AS content
-    FROM "Notes" n
-    WHERE n."Embedding" IS NOT NULL
-      AND n."Id" != ${seedNote.id}
-      AND n."Status" = 'Permanent'
-      AND 1.0 - (n."Embedding"::vector <=> (
-            SELECT "Embedding"::vector FROM "Notes" WHERE "Id" = ${seedNote.id}
-          )) >= 0.65
-    ORDER BY n."Embedding"::vector <=> (
-      SELECT "Embedding"::vector FROM "Notes" WHERE "Id" = ${seedNote.id}
-    )
-    LIMIT ${limit}
-  ` as unknown as ClusterNote[]
+  // Get seed note's vector from Vectorize
+  const seedVectors = await vectorize.getByIds([seedNote.id])
+  if (!seedVectors.length || !seedVectors[0]?.values?.length) return []
 
-  return rows
+  const results = await vectorize.query(seedVectors[0].values, {
+    topK: limit + 1,
+    returnMetadata: 'none',
+  })
+
+  const similarIds = results.matches
+    .filter(m => m.id !== seedNote.id && (m.score ?? 0) >= 0.65)
+    .slice(0, limit)
+    .map(m => m.id)
+
+  if (!similarIds.length) return []
+
+  return db.select({
+    id: schema.notes.id,
+    title: schema.notes.title,
+    content: schema.notes.content,
+  }).from(schema.notes)
+    .where(inArray(schema.notes.id, similarIds))
 }
 
 async function generateContent(
@@ -109,9 +114,7 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
 }
 
 export async function runContentCron(env: Env, medium: Medium): Promise<void> {
-  const dbUrl = await env.DATABASE_URL.get()
-  const rawSql = createSql(dbUrl)
-  const db = createDb(dbUrl)
+  const db = createDb(env.d1_db)
   const openai = await buildOpenAI(env)
 
   const seedNote = await pickSeedNote(db, medium)
@@ -120,7 +123,7 @@ export async function runContentCron(env: Env, medium: Medium): Promise<void> {
     return
   }
 
-  const clusterNotes = await findClusterNotes(rawSql, seedNote)
+  const clusterNotes = await findClusterNotes(env.vector_db, db, seedNote)
 
   // Load voice config + examples
   const [voiceConfig] = await db.select().from(schema.voiceConfigs)
@@ -141,6 +144,7 @@ export async function runContentCron(env: Env, medium: Medium): Promise<void> {
     clusterNoteIds: JSON.stringify(clusterNotes.map(n => n.id)),
     topicSummary: generated.topicSummary,
     status: 'Pending',
+    generatedAt: isoNow(),
   })
 
   await db.insert(schema.contentPieces).values({
@@ -151,10 +155,11 @@ export async function runContentCron(env: Env, medium: Medium): Promise<void> {
     description: generated.description,
     generatedTags: JSON.stringify(generated.tags),
     status: 'Draft',
+    createdAt: isoNow(),
   })
 
   // Mark seed as used
-  await db.insert(schema.usedSeedNotes).values({ noteId: seedNote.id })
+  await db.insert(schema.usedSeedNotes).values({ noteId: seedNote.id, usedAt: isoNow() })
     .onConflictDoNothing()
 
   console.log(`[cron:${medium}] Generated content from seed note "${seedNote.title}"`)
