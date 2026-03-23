@@ -9,25 +9,92 @@ const router = new Hono<HonoEnv>()
 // GET /api/kb-health/overview
 router.get('/overview', async (c) => {
   const db = c.get('db')
+  const rawSql = c.get('sql')
 
-  const [total, fleeting, permanent, noEmbedding, noTags] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(notes),
-    db.select({ count: sql<number>`count(*)::int` }).from(notes)
-      .where(eq(notes.status, 'Fleeting')),
+  // ── Scorecard ─────────────────────────────────────────────────────────────
+  const [totalRows, embeddedRows, orphanRows, avgRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(notes)
       .where(eq(notes.status, 'Permanent')),
     db.select({ count: sql<number>`count(*)::int` }).from(notes)
-      .where(sql`"Embedding" IS NULL`),
+      .where(and(eq(notes.status, 'Permanent'), sql`"Embedding" IS NOT NULL`)),
     db.select({ count: sql<number>`count(*)::int` }).from(notes)
-      .where(sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`),
+      .where(and(
+        eq(notes.status, 'Permanent'),
+        sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`,
+        sql`"Content" NOT LIKE '%[[%]]%'`,
+      )),
+    rawSql`
+      SELECT COALESCE(AVG(link_count), 0)::float8 AS avg
+      FROM (
+        SELECT n."Id",
+          (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
+          (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS link_count
+        FROM "Notes" n
+        WHERE n."Status" = 'Permanent'
+      ) sub
+    `,
   ])
 
+  const totalNotes = totalRows[0]?.count ?? 0
+  const embeddedCount = embeddedRows[0]?.count ?? 0
+  const embeddedPercent = totalNotes > 0 ? Math.round((embeddedCount / totalNotes) * 100) : 0
+  const avgConnections = Number((avgRows[0] as { avg: number })?.avg?.toFixed(1) ?? 0)
+
+  // ── New & Unconnected (orphans from last 30 days) ─────────────────────────
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const orphanNotes = await rawSql`
+    SELECT n."Id" AS id, n."Title" AS title, n."CreatedAt" AS "createdAt",
+      (SELECT count(*) FROM "Notes" n2
+       WHERE n2."Status" = 'Permanent'
+         AND n2."Embedding" IS NOT NULL
+         AND n."Embedding" IS NOT NULL
+         AND n2."Id" != n."Id"
+         AND (1 - (n."Embedding"::vector(1536) <=> n2."Embedding"::vector(1536))) > 0.5
+       LIMIT 5
+      )::int AS "suggestionCount"
+    FROM "Notes" n
+    WHERE n."Status" = 'Permanent'
+      AND n."CreatedAt" >= ${thirtyDaysAgo.toISOString()}
+      AND n."Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")
+      AND n."Content" NOT LIKE '%[[%]]%'
+    ORDER BY n."CreatedAt" DESC
+    LIMIT 20
+  `
+
+  // ── Richest Clusters (notes with most connections) ────────────────────────
+  const clusters = await rawSql`
+    SELECT n."Id" AS "hubNoteId", n."Title" AS "hubTitle",
+      (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
+      (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS "noteCount"
+    FROM "Notes" n
+    WHERE n."Status" = 'Permanent'
+    ORDER BY "noteCount" DESC
+    LIMIT 5
+  `
+
+  // ── Never Used as Seeds ───────────────────────────────────────────────────
+  const unusedSeeds = await rawSql`
+    SELECT n."Id" AS id, n."Title" AS title,
+      (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
+      (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS "connectionCount"
+    FROM "Notes" n
+    WHERE n."Status" = 'Permanent'
+      AND n."Embedding" IS NOT NULL
+      AND n."Id" NOT IN (SELECT "NoteId" FROM "UsedSeedNotes")
+    ORDER BY n."CreatedAt" DESC
+    LIMIT 10
+  `
+
   return c.json({
-    totalNotes: total[0]?.count ?? 0,
-    fleetingNotes: fleeting[0]?.count ?? 0,
-    permanentNotes: permanent[0]?.count ?? 0,
-    notesWithoutEmbedding: noEmbedding[0]?.count ?? 0,
-    notesWithoutTags: noTags[0]?.count ?? 0,
+    scorecard: {
+      totalNotes,
+      embeddedPercent,
+      orphanCount: orphanRows[0]?.count ?? 0,
+      averageConnections: avgConnections,
+    },
+    newAndUnconnected: orphanNotes,
+    richestClusters: clusters,
+    neverUsedAsSeeds: unusedSeeds,
   })
 })
 
