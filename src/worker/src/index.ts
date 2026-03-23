@@ -1,0 +1,94 @@
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import type { HonoEnv, Env, EmbedQueueMessage, EnrichQueueMessage } from './types'
+import { dbMiddleware, authMiddleware } from './middleware/auth'
+import notesRouter from './routes/notes'
+import searchRouter from './routes/search'
+import captureRouter from './routes/capture'
+import contentRouter from './routes/content'
+import graphRouter from './routes/graph'
+import kbHealthRouter from './routes/kb-health'
+import tagsRouter from './routes/tags'
+import voiceRouter from './routes/voice'
+import researchRouter from './routes/research'
+import importExportRouter from './routes/import-export'
+import { handleEmbedBatch } from './queues/embedding'
+import { handleEnrichBatch } from './queues/enrichment'
+import { runContentCron } from './cron/content'
+
+const app = new Hono<HonoEnv>()
+
+// ── Global middleware ──────────────────────────────────────────────────────────
+
+app.use('*', cors({
+  origin: (origin) => origin ?? '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}))
+
+app.use('/api/*', dbMiddleware)
+
+// Capture endpoints use webhook secret auth, not JWT — skip authMiddleware
+app.use('/api/capture/*', async (c, next) => next())
+// All other /api routes require JWT
+app.use('/api/*', async (c, next) => {
+  // Skip auth for capture routes (handled inside the router)
+  if (c.req.path.startsWith('/api/capture/')) return next()
+  return authMiddleware(c, next)
+})
+
+// ── Routes ─────────────────────────────────────────────────────────────────────
+
+app.route('/api/notes', notesRouter)
+app.route('/api/search', searchRouter)
+app.route('/api/capture', captureRouter)
+app.route('/api/content', contentRouter)
+app.route('/api/graph', graphRouter)
+app.route('/api/kb-health', kbHealthRouter)
+app.route('/api/tags', tagsRouter)
+app.route('/api/voice', voiceRouter)
+app.route('/api/research', researchRouter)
+app.route('/api/export', importExportRouter)
+app.route('/api/import', importExportRouter)
+
+// ── Health ─────────────────────────────────────────────────────────────────────
+
+app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() }))
+
+// ── Queue consumer ─────────────────────────────────────────────────────────────
+
+async function queue(
+  batch: MessageBatch<EmbedQueueMessage | EnrichQueueMessage>,
+  env: Env,
+): Promise<void> {
+  if (batch.queue === 'zettel-embeddings') {
+    await handleEmbedBatch(batch as MessageBatch<EmbedQueueMessage>, env)
+  } else if (batch.queue === 'zettel-enrichment') {
+    await handleEnrichBatch(batch as MessageBatch<EnrichQueueMessage>, env)
+  }
+}
+
+// ── Cron handler ───────────────────────────────────────────────────────────────
+
+async function scheduled(
+  event: ScheduledEvent,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void> {
+  const cron = event.cron
+
+  if (cron === '0 9 * * MON') {
+    // Monday 9am — generate blog post
+    ctx.waitUntil(runContentCron(env, 'Blog'))
+  } else if (cron === '0 9 * * *') {
+    // Daily 9am — generate social post
+    ctx.waitUntil(runContentCron(env, 'Social'))
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  queue,
+  scheduled,
+}

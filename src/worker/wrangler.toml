@@ -1,0 +1,36 @@
+name = "zettel-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[queues.consumers]]
+queue = "zettel-embeddings"
+max_batch_size = 10
+max_batch_timeout = 30
+
+[[queues.consumers]]
+queue = "zettel-enrichment"
+max_batch_size = 5
+max_batch_timeout = 30
+
+[[queues.producers]]
+queue = "zettel-embeddings"
+binding = "EMBED_QUEUE"
+
+[[queues.producers]]
+queue = "zettel-enrichment"
+binding = "ENRICH_QUEUE"
+
+[triggers]
+# Blog generation: Monday 09:00 UTC | Social generation: daily 09:00 UTC
+crons = ["0 9 * * MON", "0 9 * * *"]
+
+# ── Secrets (wrangler secret put NAME --name zettel-api) ─────────────────────
+# DATABASE_URL          Neon PostgreSQL connection string
+# OPENAI_API_KEY        OpenAI API key
+# KINDE_DOMAIN          https://aftuh.kinde.com
+# KINDE_AUDIENCE        (optional) Kinde API audience
+# CF_AI_GATEWAY_URL     (optional) https://gateway.ai.cloudflare.com/v1/{acct}/{gw}
+# CAPTURE_WEBHOOK_SECRET  Shared secret for email webhook validation
+# TELEGRAM_BOT_TOKEN    (optional) Telegram bot token
+# BRAVE_API_KEY         (optional) Brave Search API key for research agent
