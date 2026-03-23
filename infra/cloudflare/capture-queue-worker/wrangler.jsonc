@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zettel-capture-queue",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-04",
+  "observability": {
+    "enabled": true
+  },
+
+  // ── Queue Consumer ────────────────────────────────────────────────────────────
+  "queues": {
+    "consumers": [
+      {
+        "queue": "zettel-capture",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30
+      }
+    ]
+  },
+
+  // ── KV Namespace ─────────────────────────────────────────────────────────────
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "dd8fd425b3b0458d88f528dfa6d4fc00",
+      // Optional: preview_id used when running `wrangler dev` for local dev
+      "preview_id": "<ID_OF_PREVIEW_KV_NAMESPACE_FOR_LOCAL_DEVELOPMENT>"
+    }
+  ],
+
+  // ── D1 Database ───────────────────────────────────────────────────────────────
+  "d1_databases": [
+    {
+      "binding": "d1_db",
+      "database_name": "zettel",
+      "database_id": "066cf08e-6dc2-4ab6-baa7-9e8396d59e6c"
+    }
+  ],
+
+  // ── Vectorize Index ───────────────────────────────────────────────────────────
+  "vectorize": [
+    {
+      "binding": "vector_db",
+      "index_name": "zettel-notes"
+    }
+  ],
+
+  // ── Workers AI ────────────────────────────────────────────────────────────────
+  // ai_binding: general inference (embeddings, summarization)
+  // ai_tts: text-to-speech — bound online as a second AI binding; uses same Ai type
+  "ai": {
+    "binding": "ai_binding"
+  },
+
+  // ── Secrets (set via CLI — never stored here) ─────────────────────────────────
+  // wrangler secret put BACKEND_URL     --name zettel-capture-queue
+  // wrangler secret put WEBHOOK_SECRET  --name zettel-capture-queue
+}
