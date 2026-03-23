@@ -9,6 +9,22 @@ directory = "../zettel-web-ui/dist"
 binding = "ASSETS"
 not_found_handling = "none"
 
+# ── Cloudflare D1 database ────────────────────────────────────────────────────
+[[d1_databases]]
+binding = "d1_db"
+database_name = "zettel"
+database_id = "066cf08e-6dc2-4ab6-baa7-9e8396d59e6c"
+
+# ── Cloudflare Vectorize ──────────────────────────────────────────────────────
+[[vectorize]]
+binding = "vector_db"
+index_name = "zettel-notes"
+
+# ── Workers AI ────────────────────────────────────────────────────────────────
+[ai]
+binding = "ai_binding"
+
+# ── Queues ────────────────────────────────────────────────────────────────────
 [[queues.consumers]]
 queue = "zettel-embeddings"
 max_batch_size = 10
@@ -36,18 +52,11 @@ crons = ["0 9 * * MON", "0 9 * * *"]
 
 # ── Cloudflare Secrets Store ───────────────────────────────────────────────────
 # Secrets Store ID: e328ab1e3e624d24b1712d38aad51017
-# Create each secret in the store with the same name as the binding.
-
-[[secrets_store_secrets]]
-binding = "DATABASE_URL"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "DATABASE_URL"
 
 [[secrets_store_secrets]]
 binding = "OPENAI_API_KEY"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "OPENAI_API_KEY"
-
 
 [[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"

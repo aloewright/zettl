@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using OllamaSharp;
 using OpenAI;
+using System.ClientModel;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -150,7 +151,7 @@ else
 {
     var apiKey = builder.Configuration["Embedding:ApiKey"] ?? "";
     builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
-        new OpenAIClient(apiKey, BuildOpenAiOptions())
+        new OpenAIClient(new ApiKeyCredential(apiKey), BuildOpenAiOptions())
             .GetEmbeddingClient(embeddingModel)
             .AsIEmbeddingGenerator());
 }
@@ -175,7 +176,7 @@ builder.Services.Configure<ContentGenerationOptions>(
 var cgModel = builder.Configuration["ContentGeneration:Model"] ?? "gpt-4o";
 var cgApiKey = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
 builder.Services.AddSingleton<IChatClient>(
-    new OpenAIClient(cgApiKey, BuildOpenAiOptions()).GetChatClient(cgModel).AsIChatClient());
+    new OpenAIClient(new ApiKeyCredential(cgApiKey), BuildOpenAiOptions()).GetChatClient(cgModel).AsIChatClient());
 
 builder.Services.AddScoped<IContentGenerationService, ContentGenerationService>();
 

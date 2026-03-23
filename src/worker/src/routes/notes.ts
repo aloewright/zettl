@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { eq, desc, and, sql, inArray } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
-import { makeId, DEFAULT_WEIGHTS } from '../types'
+import { makeId, isoNow } from '../types'
 import { notes, noteTags, noteVersions } from '../db/schema'
 import { hybridSearch, fullTextSearch, findRelated } from '../services/search'
 import { buildOpenAI, generateEmbedding } from '../services/embeddings'
@@ -28,7 +28,7 @@ router.get('/', async (c) => {
       .orderBy(desc(notes.createdAt))
       .limit(size)
       .offset(offset),
-    db.select({ count: sql<number>`count(*)::int` }).from(notes)
+    db.select({ count: sql<number>`count(*)` }).from(notes)
       .where(conditions.length ? and(...conditions) : undefined),
   ])
 
@@ -70,7 +70,7 @@ router.get('/inbox', async (c) => {
 router.get('/inbox/count', async (c) => {
   const db = c.get('db')
   const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ count: sql<number>`count(*)` })
     .from(notes)
     .where(eq(notes.status, 'Fleeting'))
   return c.json({ count: row?.count ?? 0 })
@@ -78,7 +78,6 @@ router.get('/inbox/count', async (c) => {
 
 router.get('/discover', async (c) => {
   const db = c.get('db')
-  // Random sample of permanent notes not recently visited
   const rows = await db.select().from(notes)
     .where(and(eq(notes.status, 'Permanent'), eq(notes.noteType, 'Regular')))
     .orderBy(sql`RANDOM()`)
@@ -112,33 +111,44 @@ router.get('/search-titles', async (c) => {
 
 router.post('/check-duplicate', async (c) => {
   const openai = await buildOpenAI(c.env)
-  const rawSql = c.get('sql')
   const body = await c.req.json<{ content: string; minimumSimilarity?: number }>()
   if (!body.content) return c.json({ error: 'content required' }, 400)
 
   const minSim = body.minimumSimilarity ?? 0.92
   const embedding = await generateEmbedding(openai, body.content)
-  const vec = `[${embedding.join(',')}]`
 
-  const rows = await rawSql`
-    SELECT "Id" AS "noteId", "Title" AS "title",
-           (1.0 - ("Embedding"::vector <=> ${vec}::vector))::float8 AS "similarity"
-    FROM "Notes"
-    WHERE "Embedding" IS NOT NULL
-      AND 1.0 - ("Embedding"::vector <=> ${vec}::vector) >= ${minSim}
-    ORDER BY "Embedding"::vector <=> ${vec}::vector
-    LIMIT 5
-  ` as { noteId: string; title: string; similarity: number }[]
+  const vecResults = await c.env.vector_db.query(embedding, {
+    topK: 5,
+    returnMetadata: 'all',
+  })
 
-  return c.json({ duplicates: rows })
+  const matches = vecResults.matches.filter(m => (m.score ?? 0) >= minSim)
+  if (!matches.length) return c.json({ duplicates: [] })
+
+  // Fetch titles from D1
+  const ids = matches.map(m => m.id)
+  const placeholders = ids.map(() => '?').join(',')
+  const { results } = await c.env.d1_db
+    .prepare(`SELECT "Id" AS noteId, "Title" AS title FROM "Notes" WHERE "Id" IN (${placeholders})`)
+    .bind(...ids)
+    .all<{ noteId: string; title: string }>()
+
+  const titleMap = new Map((results ?? []).map(r => [r.noteId, r.title]))
+
+  const duplicates = matches.map(m => ({
+    noteId: m.id,
+    title: titleMap.get(m.id) ?? '',
+    similarity: m.score ?? 0,
+  }))
+
+  return c.json({ duplicates })
 })
 
 router.post('/re-embed', async (c) => {
   const db = c.get('db')
-  // Mark all embedded notes as Stale so queue worker re-processes them
   await db.update(notes)
     .set({ embedStatus: 'Stale' })
-    .where(sql`"EmbedStatus" = 'Done'`)
+    .where(eq(notes.embedStatus, 'Done'))
   return c.json({ queued: true })
 })
 
@@ -178,7 +188,7 @@ router.post('/', async (c) => {
   }
 
   const id = makeId()
-  const now = new Date()
+  const now = isoNow()
 
   await db.insert(notes).values({
     id,
@@ -201,7 +211,6 @@ router.post('/', async (c) => {
     await db.insert(noteTags).values(body.tags.map(tag => ({ noteId: id, tag })))
   }
 
-  // Enqueue embedding
   await c.env.EMBED_QUEUE.send({ noteId: id })
 
   const [created] = await db.select().from(notes).where(eq(notes.id, id))
@@ -236,6 +245,7 @@ router.put('/:id', async (c) => {
     title: existing.title,
     content: existing.content,
     tags: existingTags.map(t => t.tag).join(','),
+    savedAt: isoNow(),
   })
 
   const contentChanged = body.content !== undefined && body.content !== existing.content
@@ -250,7 +260,7 @@ router.put('/:id', async (c) => {
     sourceUrl: body.sourceUrl !== undefined ? body.sourceUrl : existing.sourceUrl,
     sourceYear: body.sourceYear !== undefined ? body.sourceYear : existing.sourceYear,
     sourceType: body.sourceType !== undefined ? body.sourceType : existing.sourceType,
-    updatedAt: new Date(),
+    updatedAt: isoNow(),
     ...(contentChanged ? { embedStatus: 'Stale' } : {}),
   }).where(eq(notes.id, id))
 
@@ -278,6 +288,8 @@ router.delete('/:id', async (c) => {
   if (!existing) return c.json({ error: 'Not found' }, 404)
 
   await db.delete(notes).where(eq(notes.id, id))
+  // Also delete from Vectorize
+  await c.env.vector_db.deleteByIds([id])
   return c.json({ deleted: true })
 })
 
@@ -288,7 +300,7 @@ router.post('/:id/promote', async (c) => {
   const [existing] = await db.select().from(notes).where(eq(notes.id, id))
   if (!existing) return c.json({ error: 'Not found' }, 404)
 
-  await db.update(notes).set({ status: 'Permanent', updatedAt: new Date() }).where(eq(notes.id, id))
+  await db.update(notes).set({ status: 'Permanent', updatedAt: isoNow() }).where(eq(notes.id, id))
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
   const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
   return c.json({ ...updated, tags: tags.map(t => t.tag) })
@@ -297,34 +309,36 @@ router.post('/:id/promote', async (c) => {
 // ── Related / backlinks ────────────────────────────────────────────────────────
 
 router.get('/:id/related', async (c) => {
-  const rawSql = c.get('sql')
+  const db = c.get('db')
   const id = c.req.param('id')
   const minSim = parseFloat(c.req.query('minimumSimilarity') ?? '0.7')
   const limit = parseInt(c.req.query('limit') ?? '5')
 
-  const results = await findRelated(rawSql, id, minSim, limit)
+  const results = await findRelated(c.env.vector_db, db, id, minSim, limit)
   return c.json(results)
 })
 
 router.get('/:id/backlinks', async (c) => {
   const db = c.get('db')
-  const rawSql = c.get('sql')
   const id = c.req.param('id')
 
   const [note] = await db.select({ title: notes.title }).from(notes).where(eq(notes.id, id))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
   // Find notes whose content contains a wiki-link [[title]] or the note id
-  const rows = await rawSql`
-    SELECT "Id" AS id, "Title" AS title
-    FROM "Notes"
-    WHERE "Id" != ${id}
-      AND ("Content" ILIKE ${`%[[${note.title}]]%`} OR "Content" ILIKE ${`%${id}%`})
-    ORDER BY "Title"
-    LIMIT 50
-  ` as { id: string; title: string }[]
+  const { results } = await c.env.d1_db
+    .prepare(`
+      SELECT "Id" AS id, "Title" AS title
+      FROM "Notes"
+      WHERE "Id" != ?
+        AND ("Content" LIKE ? OR "Content" LIKE ?)
+      ORDER BY "Title"
+      LIMIT 50
+    `)
+    .bind(id, `%[[${note.title}]]%`, `%${id}%`)
+    .all<{ id: string; title: string }>()
 
-  return c.json(rows)
+  return c.json(results ?? [])
 })
 
 // ── Merge ──────────────────────────────────────────────────────────────────────
@@ -348,6 +362,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
     title: target.title,
     content: target.content,
     tags: targetTags.map(t => t.tag).join(','),
+    savedAt: isoNow(),
   })
 
   const mergedContent = `${target.content}\n\n---\n\n${fleeting.content}`
@@ -355,7 +370,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
 
   await db.update(notes).set({
     content: mergedContent,
-    updatedAt: new Date(),
+    updatedAt: isoNow(),
     embedStatus: 'Stale',
   }).where(eq(notes.id, targetId))
 
@@ -365,6 +380,8 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
   }
 
   await db.delete(notes).where(eq(notes.id, fleetingId))
+  // Delete fleeting note vector from Vectorize
+  await c.env.vector_db.deleteByIds([fleetingId])
   await c.env.EMBED_QUEUE.send({ noteId: targetId })
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, targetId))
@@ -375,15 +392,13 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
 
 router.get('/:id/suggested-tags', async (c) => {
   const db = c.get('db')
-  const rawSql = c.get('sql')
-  const openai = await buildOpenAI(c.env)
   const id = c.req.param('id')
 
   const [note] = await db.select().from(notes).where(eq(notes.id, id))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
   // Find semantically similar notes and collect their tags
-  const similar = await findRelated(rawSql, id, 0.7, 10)
+  const similar = await findRelated(c.env.vector_db, db, id, 0.7, 10)
   if (!similar.length) return c.json({ suggestions: [] })
 
   const similarIds = similar.map(r => r.noteId)

@@ -1,125 +1,124 @@
-import { pgTable, varchar, text, integer, timestamp, doublePrecision } from 'drizzle-orm/pg-core'
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
-export const notes = pgTable('Notes', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
+export const notes = sqliteTable('Notes', {
+  id: text('Id').primaryKey(),
   title: text('Title').notNull(),
   content: text('Content').notNull(),
-  createdAt: timestamp('CreatedAt', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('UpdatedAt', { withTimezone: true }).defaultNow().notNull(),
-  status: varchar('Status', { length: 20 }).default('Permanent').notNull(),
-  source: varchar('Source', { length: 20 }),
+  createdAt: text('CreatedAt').notNull(), // ISO-8601 string
+  updatedAt: text('UpdatedAt').notNull(),
+  status: text('Status').notNull().default('Permanent'),
+  source: text('Source'),
   enrichmentJson: text('EnrichmentJson'),
-  enrichStatus: varchar('EnrichStatus', { length: 20 }).default('None').notNull(),
-  enrichRetryCount: integer('EnrichRetryCount').default(0).notNull(),
-  // Embedding stored as real[] in PG; vector ops use raw SQL
-  embedStatus: varchar('EmbedStatus', { length: 20 }).default('Pending').notNull(),
-  embedRetryCount: integer('EmbedRetryCount').default(0).notNull(),
+  enrichStatus: text('EnrichStatus').notNull().default('None'),
+  enrichRetryCount: integer('EnrichRetryCount').notNull().default(0),
+  // Embeddings stored in Vectorize, not D1
+  embedStatus: text('EmbedStatus').notNull().default('Pending'),
+  embedRetryCount: integer('EmbedRetryCount').notNull().default(0),
   embedError: text('EmbedError'),
-  embedUpdatedAt: timestamp('EmbedUpdatedAt', { withTimezone: true }),
-  embeddingModel: varchar('EmbeddingModel', { length: 100 }),
-  noteType: varchar('NoteType', { length: 20 }).default('Regular').notNull(),
+  embedUpdatedAt: text('EmbedUpdatedAt'),
+  embeddingModel: text('EmbeddingModel'),
+  noteType: text('NoteType').notNull().default('Regular'),
   sourceAuthor: text('SourceAuthor'),
   sourceTitle: text('SourceTitle'),
   sourceUrl: text('SourceUrl'),
   sourceYear: integer('SourceYear'),
-  sourceType: varchar('SourceType', { length: 20 }),
+  sourceType: text('SourceType'),
 })
 
-export const noteTags = pgTable('NoteTags', {
-  noteId: varchar('NoteId', { length: 21 }).notNull(),
+export const noteTags = sqliteTable('NoteTags', {
+  noteId: text('NoteId').notNull(),
   tag: text('Tag').notNull(),
 })
 
-export const noteVersions = pgTable('NoteVersions', {
-  id: integer('Id').primaryKey().generatedByDefaultAsIdentity(),
-  noteId: varchar('NoteId', { length: 21 }).notNull(),
+export const noteVersions = sqliteTable('NoteVersions', {
+  id: integer('Id').primaryKey({ autoIncrement: true }),
+  noteId: text('NoteId').notNull(),
   title: text('Title').notNull(),
   content: text('Content').notNull(),
   tags: text('Tags'),
-  savedAt: timestamp('SavedAt', { withTimezone: true }).defaultNow().notNull(),
+  savedAt: text('SavedAt').notNull(),
 })
 
 // ── Content generation ────────────────────────────────────────────────────────
 
-export const contentGenerations = pgTable('ContentGenerations', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  seedNoteId: varchar('SeedNoteId', { length: 21 }).notNull(),
-  clusterNoteIds: text('ClusterNoteIds').notNull().default('[]'), // jsonb stored as text
+export const contentGenerations = sqliteTable('ContentGenerations', {
+  id: text('Id').primaryKey(),
+  seedNoteId: text('SeedNoteId').notNull(),
+  clusterNoteIds: text('ClusterNoteIds').notNull().default('[]'),
   topicSummary: text('TopicSummary').notNull(),
-  // TopicEmbedding: vector, raw SQL only
-  status: varchar('Status', { length: 20 }).default('Pending').notNull(),
-  generatedAt: timestamp('GeneratedAt', { withTimezone: true }).defaultNow().notNull(),
-  reviewedAt: timestamp('ReviewedAt', { withTimezone: true }),
+  status: text('Status').notNull().default('Pending'),
+  generatedAt: text('GeneratedAt').notNull(),
+  reviewedAt: text('ReviewedAt'),
 })
 
-export const contentPieces = pgTable('ContentPieces', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  generationId: varchar('GenerationId', { length: 21 }).notNull(),
-  medium: varchar('Medium', { length: 20 }).notNull(),
+export const contentPieces = sqliteTable('ContentPieces', {
+  id: text('Id').primaryKey(),
+  generationId: text('GenerationId').notNull(),
+  medium: text('Medium').notNull(),
   body: text('Body').notNull(),
   description: text('Description'),
-  generatedTags: text('GeneratedTags').notNull().default('[]'), // jsonb stored as text
-  status: varchar('Status', { length: 20 }).default('Draft').notNull(),
-  createdAt: timestamp('CreatedAt', { withTimezone: true }).defaultNow().notNull(),
-  reviewedAt: timestamp('ReviewedAt', { withTimezone: true }),
+  generatedTags: text('GeneratedTags').notNull().default('[]'),
+  status: text('Status').notNull().default('Draft'),
+  createdAt: text('CreatedAt').notNull(),
+  reviewedAt: text('ReviewedAt'),
 })
 
-export const usedSeedNotes = pgTable('UsedSeedNotes', {
-  noteId: varchar('NoteId', { length: 21 }).primaryKey(),
-  usedAt: timestamp('UsedAt', { withTimezone: true }).defaultNow().notNull(),
+export const usedSeedNotes = sqliteTable('UsedSeedNotes', {
+  noteId: text('NoteId').primaryKey(),
+  usedAt: text('UsedAt').notNull(),
 })
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
 
-export const voiceExamples = pgTable('VoiceExamples', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  medium: varchar('Medium', { length: 20 }).notNull(),
+export const voiceExamples = sqliteTable('VoiceExamples', {
+  id: text('Id').primaryKey(),
+  medium: text('Medium').notNull(),
   content: text('Content').notNull(),
-  createdAt: timestamp('CreatedAt', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: text('CreatedAt').notNull(),
 })
 
-export const voiceConfigs = pgTable('VoiceConfigs', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  medium: varchar('Medium', { length: 20 }).notNull(),
+export const voiceConfigs = sqliteTable('VoiceConfigs', {
+  id: text('Id').primaryKey(),
+  medium: text('Medium').notNull(),
   toneDescription: text('ToneDescription'),
   audienceDescription: text('AudienceDescription'),
-  updatedAt: timestamp('UpdatedAt', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: text('UpdatedAt').notNull(),
 })
 
 // ── Research ──────────────────────────────────────────────────────────────────
 
-export const researchAgendas = pgTable('ResearchAgendas', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  triggeredFromNoteId: varchar('TriggeredFromNoteId', { length: 21 }),
-  status: varchar('Status', { length: 20 }).default('Pending').notNull(),
-  createdAt: timestamp('CreatedAt', { withTimezone: true }).defaultNow().notNull(),
-  approvedAt: timestamp('ApprovedAt', { withTimezone: true }),
+export const researchAgendas = sqliteTable('ResearchAgendas', {
+  id: text('Id').primaryKey(),
+  triggeredFromNoteId: text('TriggeredFromNoteId'),
+  status: text('Status').notNull().default('Pending'),
+  createdAt: text('CreatedAt').notNull(),
+  approvedAt: text('ApprovedAt'),
 })
 
-export const researchTasks = pgTable('ResearchTasks', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  agendaId: varchar('AgendaId', { length: 21 }).notNull(),
+export const researchTasks = sqliteTable('ResearchTasks', {
+  id: text('Id').primaryKey(),
+  agendaId: text('AgendaId').notNull(),
   query: text('Query').notNull(),
-  sourceType: varchar('SourceType', { length: 20 }).notNull(),
+  sourceType: text('SourceType').notNull(),
   motivation: text('Motivation').notNull(),
-  motivationNoteId: varchar('MotivationNoteId', { length: 21 }),
-  status: varchar('Status', { length: 20 }).default('Pending').notNull(),
-  blockedAt: timestamp('BlockedAt', { withTimezone: true }),
+  motivationNoteId: text('MotivationNoteId'),
+  status: text('Status').notNull().default('Pending'),
+  blockedAt: text('BlockedAt'),
 })
 
-export const researchFindings = pgTable('ResearchFindings', {
-  id: varchar('Id', { length: 21 }).primaryKey(),
-  taskId: varchar('TaskId', { length: 21 }).notNull(),
+export const researchFindings = sqliteTable('ResearchFindings', {
+  id: text('Id').primaryKey(),
+  taskId: text('TaskId').notNull(),
   title: text('Title').notNull(),
   synthesis: text('Synthesis').notNull(),
   sourceUrl: text('SourceUrl').notNull(),
-  sourceType: varchar('SourceType', { length: 20 }).notNull(),
-  similarNoteIds: text('SimilarNoteIds').notNull().default('[]'), // jsonb
-  duplicateSimilarity: doublePrecision('DuplicateSimilarity'),
-  status: varchar('Status', { length: 20 }).default('Pending').notNull(),
-  acceptedFleetingNoteId: varchar('AcceptedFleetingNoteId', { length: 21 }),
-  createdAt: timestamp('CreatedAt', { withTimezone: true }).defaultNow().notNull(),
-  reviewedAt: timestamp('ReviewedAt', { withTimezone: true }),
+  sourceType: text('SourceType').notNull(),
+  similarNoteIds: text('SimilarNoteIds').notNull().default('[]'),
+  duplicateSimilarity: real('DuplicateSimilarity'),
+  status: text('Status').notNull().default('Pending'),
+  acceptedFleetingNoteId: text('AcceptedFleetingNoteId'),
+  createdAt: text('CreatedAt').notNull(),
+  reviewedAt: text('ReviewedAt'),
 })

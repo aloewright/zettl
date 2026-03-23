@@ -11,9 +11,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Zettel',
-        short_name: 'Zettel',
-        description: 'Personal Zettelkasten note-taking app',
+        name: "Alex's Notes",
+        short_name: "Alex's Notes",
+        description: "Alex's personal note-taking app",
         theme_color: '#78716c',
         background_color: '#fafaf9',
         display: 'standalone',

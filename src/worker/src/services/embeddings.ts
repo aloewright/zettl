@@ -16,11 +16,10 @@ export async function generateEmbedding(
   text: string,
   model = 'text-embedding-3-large',
 ): Promise<number[]> {
-  const res = await openai.embeddings.create({ input: text, model })
+  const res = await openai.embeddings.create({
+    input: text,
+    model,
+    dimensions: 1536, // Vectorize max
+  })
   return res.data[0]?.embedding ?? []
-}
-
-/** Format a float[] as a PostgreSQL vector literal: '[0.1,0.2,...]' */
-export function toVectorLiteral(embedding: number[]): string {
-  return `[${embedding.join(',')}]`
 }

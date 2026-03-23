@@ -1,8 +1,13 @@
-import type { createDb, createSql } from './db/client'
+import type { createDb } from './db/client'
 
 export interface Env {
+  // Cloudflare D1 database binding
+  d1_db: D1Database
+  // Cloudflare Vectorize index binding
+  vector_db: VectorizeIndex
+  // Workers AI binding
+  ai_binding: Ai
   // Cloudflare Secrets Store bindings — access via await env.X.get()
-  DATABASE_URL: SecretsStoreSecret
   OPENAI_API_KEY: SecretsStoreSecret
   CF_AI_GATEWAY_URL?: SecretsStoreSecret // optional binding
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
@@ -38,7 +43,6 @@ export interface HonoEnv {
   Bindings: Env
   Variables: {
     db: ReturnType<typeof createDb>
-    sql: ReturnType<typeof createSql>
     userId: string
   }
 }
@@ -74,7 +78,6 @@ export function newId(): string {
   const ts = Date.now().toString().padStart(13, '0')
   const rand = Math.floor(Math.random() * 9000 + 1000).toString()
   return ts + rand.slice(0, 8 - (ts.length - 13))
-  // Simpler version that also produces 21 chars:
 }
 
 export function makeId(): string {
@@ -88,6 +91,11 @@ export function makeId(): string {
     + now.getMilliseconds().toString().padStart(3, '0')
   const rand = Math.floor(Math.random() * 9000 + 1000).toString()
   return ts + rand // 17 + 4 = 21 chars
+}
+
+/** ISO-8601 datetime string for D1 (SQLite stores dates as text). */
+export function isoNow(): string {
+  return new Date().toISOString()
 }
 
 export function json<T>(data: T, status = 200): Response {

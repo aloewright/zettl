@@ -10,7 +10,7 @@ export function HomePage() {
     <div className="mx-auto max-w-2xl px-4 py-8">
       {totalCount > 0 && (
         <p className="mb-4 text-sm text-muted-foreground">
-          {totalCount} {totalCount === 1 ? 'note' : 'notes'} in your Zettelkasten
+          {totalCount} {totalCount === 1 ? 'note' : 'notes'} in your notes
         </p>
       )}
       <DiscoverySection />

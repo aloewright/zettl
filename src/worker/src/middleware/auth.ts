@@ -1,18 +1,16 @@
 import { createMiddleware } from 'hono/factory'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import type { HonoEnv } from '../types'
-import { createDb, createSql } from '../db/client'
+import { createDb } from '../db/client'
 
 const CF_ACCESS_CERTS_URL = 'https://worthy.cloudflareaccess.com/cdn-cgi/access/certs'
 const CF_ACCESS_AUD = '7f0d66ab33bd01abc628ce0e605e5715b20c657c64797dd1acc8698306648438'
 
 /**
- * Injects db + sql into context. Must run before any route handler.
+ * Injects db into context from D1 binding. Must run before any route handler.
  */
 export const dbMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
-  const dbUrl = await c.env.DATABASE_URL.get()
-  c.set('db', createDb(dbUrl))
-  c.set('sql', createSql(dbUrl))
+  c.set('db', createDb(c.env.d1_db))
   await next()
 })
 

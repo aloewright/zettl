@@ -1,89 +1,134 @@
 import { Hono } from 'hono'
-import { eq, and, sql, inArray } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { notes, noteTags } from '../db/schema'
 import { buildOpenAI } from '../services/embeddings'
 
 const router = new Hono<HonoEnv>()
 
+/** Count wiki-links [[...]] in a string using JS regex. */
+function countWikiLinks(content: string): number {
+  const matches = content.match(/\[\[[^\]]+\]\]/g)
+  return matches?.length ?? 0
+}
+
 // GET /api/kb-health/overview
 router.get('/overview', async (c) => {
   const db = c.get('db')
-  const rawSql = c.get('sql')
 
   // ── Scorecard ─────────────────────────────────────────────────────────────
-  const [totalRows, embeddedRows, orphanRows, avgRows] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(notes)
+  const [totalRows, embeddedRows, orphanRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(notes)
       .where(eq(notes.status, 'Permanent')),
-    db.select({ count: sql<number>`count(*)::int` }).from(notes)
-      .where(and(eq(notes.status, 'Permanent'), sql`"Embedding" IS NOT NULL`)),
-    db.select({ count: sql<number>`count(*)::int` }).from(notes)
+    db.select({ count: sql<number>`count(*)` }).from(notes)
+      .where(and(eq(notes.status, 'Permanent'), eq(notes.embedStatus, 'Done'))),
+    db.select({ count: sql<number>`count(*)` }).from(notes)
       .where(and(
         eq(notes.status, 'Permanent'),
         sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`,
         sql`"Content" NOT LIKE '%[[%]]%'`,
       )),
-    rawSql`
-      SELECT COALESCE(AVG(link_count), 0)::float8 AS avg
-      FROM (
-        SELECT n."Id",
-          (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
-          (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS link_count
-        FROM "Notes" n
-        WHERE n."Status" = 'Permanent'
-      ) sub
-    `,
   ])
 
   const totalNotes = totalRows[0]?.count ?? 0
   const embeddedCount = embeddedRows[0]?.count ?? 0
   const embeddedPercent = totalNotes > 0 ? Math.round((embeddedCount / totalNotes) * 100) : 0
-  const avgConnections = Number((avgRows[0] as { avg: number })?.avg?.toFixed(1) ?? 0)
+
+  // Compute average connections in JS
+  const permNotes = await db.select({
+    id: notes.id,
+    content: notes.content,
+  }).from(notes).where(eq(notes.status, 'Permanent'))
+
+  const allTags = await db.select().from(noteTags)
+  const tagCountMap: Record<string, number> = {}
+  for (const t of allTags) {
+    tagCountMap[t.noteId] = (tagCountMap[t.noteId] ?? 0) + 1
+  }
+
+  let totalConnections = 0
+  for (const n of permNotes) {
+    totalConnections += (tagCountMap[n.id] ?? 0) + countWikiLinks(n.content)
+  }
+  const avgConnections = permNotes.length > 0
+    ? Number((totalConnections / permNotes.length).toFixed(1))
+    : 0
 
   // ── New & Unconnected (orphans from last 30 days) ─────────────────────────
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const orphanNotes = await rawSql`
-    SELECT n."Id" AS id, n."Title" AS title, n."CreatedAt" AS "createdAt",
-      (SELECT count(*) FROM "Notes" n2
-       WHERE n2."Status" = 'Permanent'
-         AND n2."Embedding" IS NOT NULL
-         AND n."Embedding" IS NOT NULL
-         AND n2."Id" != n."Id"
-         AND (1 - (n."Embedding"::vector(3072) <=> n2."Embedding"::vector(3072))) > 0.5
-       LIMIT 5
-      )::int AS "suggestionCount"
-    FROM "Notes" n
-    WHERE n."Status" = 'Permanent'
-      AND n."CreatedAt" >= ${thirtyDaysAgo.toISOString()}
-      AND n."Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")
-      AND n."Content" NOT LIKE '%[[%]]%'
-    ORDER BY n."CreatedAt" DESC
-    LIMIT 20
-  `
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const { results: orphanNotes } = await c.env.d1_db
+    .prepare(`
+      SELECT n."Id" AS id, n."Title" AS title, n."CreatedAt" AS createdAt
+      FROM "Notes" n
+      WHERE n."Status" = 'Permanent'
+        AND n."CreatedAt" >= ?
+        AND n."Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")
+        AND n."Content" NOT LIKE '%[[%]]%'
+      ORDER BY n."CreatedAt" DESC
+      LIMIT 20
+    `)
+    .bind(thirtyDaysAgo)
+    .all<{ id: string; title: string; createdAt: string }>()
+
+  // For each orphan, count suggestions via Vectorize
+  const orphansWithSuggestions = await Promise.all(
+    (orphanNotes ?? []).map(async (orphan) => {
+      try {
+        const vectors = await c.env.vector_db.getByIds([orphan.id])
+        if (!vectors.length || !vectors[0]?.values) return { ...orphan, suggestionCount: 0 }
+        const vecResults = await c.env.vector_db.query(vectors[0].values, { topK: 6 })
+        const count = vecResults.matches.filter(m => m.id !== orphan.id && (m.score ?? 0) > 0.5).length
+        return { ...orphan, suggestionCount: count }
+      } catch {
+        return { ...orphan, suggestionCount: 0 }
+      }
+    }),
+  )
 
   // ── Richest Clusters (notes with most connections) ────────────────────────
-  const clusters = await rawSql`
-    SELECT n."Id" AS "hubNoteId", n."Title" AS "hubTitle",
-      (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
-      (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS "noteCount"
-    FROM "Notes" n
-    WHERE n."Status" = 'Permanent'
-    ORDER BY "noteCount" DESC
-    LIMIT 5
-  `
+  const clusterData = permNotes
+    .map(n => ({
+      hubNoteId: n.id,
+      noteCount: (tagCountMap[n.id] ?? 0) + countWikiLinks(n.content),
+    }))
+    .sort((a, b) => b.noteCount - a.noteCount)
+    .slice(0, 5)
+
+  // Fetch titles for top clusters
+  const clusterIds = clusterData.map(c => c.hubNoteId)
+  const clusterNotes = clusterIds.length
+    ? await db.select({ id: notes.id, title: notes.title }).from(notes)
+        .where(sql`"Id" IN (${sql.join(clusterIds.map(id => sql`${id}`), sql`,`)})`)
+    : []
+  const titleMap = new Map(clusterNotes.map(n => [n.id, n.title]))
+
+  const clusters = clusterData.map(cd => ({
+    hubNoteId: cd.hubNoteId,
+    hubTitle: titleMap.get(cd.hubNoteId) ?? '',
+    noteCount: cd.noteCount,
+  }))
 
   // ── Never Used as Seeds ───────────────────────────────────────────────────
-  const unusedSeeds = await rawSql`
-    SELECT n."Id" AS id, n."Title" AS title,
-      (SELECT count(*) FROM "NoteTags" t WHERE t."NoteId" = n."Id") +
-      (SELECT count(*) FROM regexp_matches(n."Content", '\\[\\[[^\\]]+\\]\\]', 'g')) AS "connectionCount"
-    FROM "Notes" n
-    WHERE n."Status" = 'Permanent'
-      AND n."Embedding" IS NOT NULL
-      AND n."Id" NOT IN (SELECT "NoteId" FROM "UsedSeedNotes")
-    ORDER BY n."CreatedAt" DESC
-    LIMIT 10
-  `
+  const { results: unusedSeeds } = await c.env.d1_db
+    .prepare(`
+      SELECT n."Id" AS id, n."Title" AS title
+      FROM "Notes" n
+      WHERE n."Status" = 'Permanent'
+        AND n."EmbedStatus" = 'Done'
+        AND n."Id" NOT IN (SELECT "NoteId" FROM "UsedSeedNotes")
+      ORDER BY n."CreatedAt" DESC
+      LIMIT 10
+    `)
+    .all<{ id: string; title: string }>()
+
+  // Add connection counts for unused seeds
+  const unusedSeedsWithCounts = (unusedSeeds ?? []).map(s => {
+    const note = permNotes.find(n => n.id === s.id)
+    return {
+      ...s,
+      connectionCount: (tagCountMap[s.id] ?? 0) + (note ? countWikiLinks(note.content) : 0),
+    }
+  })
 
   return c.json({
     scorecard: {
@@ -92,9 +137,9 @@ router.get('/overview', async (c) => {
       orphanCount: orphanRows[0]?.count ?? 0,
       averageConnections: avgConnections,
     },
-    newAndUnconnected: orphanNotes,
+    newAndUnconnected: orphansWithSuggestions,
     richestClusters: clusters,
-    neverUsedAsSeeds: unusedSeeds,
+    neverUsedAsSeeds: unusedSeedsWithCounts,
   })
 })
 
@@ -142,7 +187,7 @@ router.get('/large-notes', async (c) => {
   const rows = await db.select({
     id: notes.id,
     title: notes.title,
-    contentLength: sql<number>`LENGTH("Content")::int`,
+    contentLength: sql<number>`LENGTH("Content")`,
   }).from(notes)
     .where(sql`LENGTH("Content") > ${threshold}`)
     .orderBy(sql`LENGTH("Content") DESC`)
@@ -175,7 +220,7 @@ router.post('/link', async (c) => {
 
   await db.update(notes).set({
     content: source.content + link,
-    updatedAt: new Date(),
+    updatedAt: new Date().toISOString(),
     embedStatus: 'Stale',
   }).where(eq(notes.id, body.sourceId))
 

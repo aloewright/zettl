@@ -1,70 +1,106 @@
-import type { NeonQueryFunction } from '@neondatabase/serverless'
+import type { Db } from '../db/client'
 import type { SearchResult, SearchWeights } from '../types'
-import { generateEmbedding, toVectorLiteral } from './embeddings'
+import { generateEmbedding } from './embeddings'
 import type OpenAI from 'openai'
 
+/**
+ * Full-text search using FTS5.
+ */
 export async function fullTextSearch(
-  sql: NeonQueryFunction<false, false>,
+  db: Db,
   query: string,
   limit = 50,
 ): Promise<SearchResult[]> {
-  const rows = await sql`
-    SELECT "Id" AS "noteId",
-           "Title" AS "title",
-           ts_headline('english', "Content",
-                       plainto_tsquery('english', ${query}),
-                       'MaxWords=35,MinWords=15,StartSel=,StopSel=') AS "snippet",
-           ts_rank(to_tsvector('english', "Title" || ' ' || "Content"),
-                   plainto_tsquery('english', ${query}))::float8 AS "rank"
-    FROM "Notes"
-    WHERE to_tsvector('english', "Title" || ' ' || "Content")
-          @@ plainto_tsquery('english', ${query})
-    ORDER BY "rank" DESC
-    LIMIT ${limit}
-  ` as SearchResult[]
-  return rows
+  // FTS5 query — escape double quotes in user input
+  const ftsQuery = query.replace(/"/g, '""')
+  const stmt = db.$client
+    .prepare(`
+      SELECT f."Id" AS noteId,
+             f."Title" AS title,
+             snippet(notes_fts, 2, '', '', '...', 35) AS snippet,
+             rank AS rank
+      FROM notes_fts f
+      WHERE notes_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `)
+    .bind(ftsQuery, limit)
+
+  const { results } = await stmt.all<SearchResult>()
+  // FTS5 rank is negative (lower = better). Normalize to positive.
+  const maxRank = Math.max(...(results ?? []).map(r => Math.abs(r.rank)), 1)
+  return (results ?? []).map(r => ({ ...r, rank: Math.abs(r.rank) / maxRank }))
 }
 
+/**
+ * Semantic search using Cloudflare Vectorize.
+ */
 export async function semanticSearch(
-  sql: NeonQueryFunction<false, false>,
+  vectorize: VectorizeIndex,
+  db: Db,
   openai: OpenAI,
   query: string,
   weights: SearchWeights,
   limit = 20,
 ): Promise<SearchResult[]> {
   const embedding = await generateEmbedding(openai, query)
-  const vec = toVectorLiteral(embedding)
-  const rows = await sql`
-    SELECT "Id" AS "noteId",
-           "Title" AS "title",
-           CASE WHEN LENGTH("Content") > 200
-                THEN LEFT("Content", 200) || '...'
-                ELSE "Content"
-           END AS "snippet",
-           (1.0 - ("Embedding"::vector <=> ${vec}::vector))::float8 AS "rank"
-    FROM "Notes"
-    WHERE "Embedding" IS NOT NULL
-      AND 1.0 - ("Embedding"::vector <=> ${vec}::vector) >= ${weights.minimumSimilarity}
-    ORDER BY "Embedding"::vector <=> ${vec}::vector
-    LIMIT ${limit}
-  ` as SearchResult[]
-  return rows
+
+  const vecResults = await vectorize.query(embedding, {
+    topK: limit,
+    returnMetadata: 'all',
+  })
+
+  const matches = vecResults.matches.filter(m => (m.score ?? 0) >= weights.minimumSimilarity)
+  if (!matches.length) return []
+
+  // Fetch titles and snippets from D1
+  const ids = matches.map(m => m.id)
+  const placeholders = ids.map(() => '?').join(',')
+  const { results } = await db.$client
+    .prepare(`
+      SELECT "Id" AS id, "Title" AS title,
+             CASE WHEN LENGTH("Content") > 200
+                  THEN SUBSTR("Content", 1, 200) || '...'
+                  ELSE "Content"
+             END AS snippet
+      FROM "Notes"
+      WHERE "Id" IN (${placeholders})
+    `)
+    .bind(...ids)
+    .all<{ id: string; title: string; snippet: string }>()
+
+  const noteMap = new Map((results ?? []).map(r => [r.id, r]))
+
+  return matches
+    .map(m => {
+      const note = noteMap.get(m.id)
+      if (!note) return null
+      return {
+        noteId: m.id,
+        title: note.title,
+        snippet: note.snippet,
+        rank: m.score ?? 0,
+      }
+    })
+    .filter((r): r is SearchResult => r !== null)
 }
 
+/**
+ * Hybrid search combining FTS5 + Vectorize results.
+ */
 export async function hybridSearch(
-  sql: NeonQueryFunction<false, false>,
+  vectorize: VectorizeIndex,
+  db: Db,
   openai: OpenAI,
   query: string,
   weights: SearchWeights,
 ): Promise<SearchResult[]> {
   const [ftResults, semResults] = await Promise.all([
-    fullTextSearch(sql, query),
-    semanticSearch(sql, openai, query, weights).catch(() => [] as SearchResult[]),
+    fullTextSearch(db, query),
+    semanticSearch(vectorize, db, openai, query, weights).catch(() => [] as SearchResult[]),
   ])
 
-  // Normalize full-text ranks to [0, 1]
   const normalized = normalizeRanks(ftResults)
-
   const merged = new Map<string, { result: SearchResult; score: number }>()
 
   for (const r of normalized) {
@@ -87,35 +123,60 @@ export async function hybridSearch(
     .sort((a, b) => b.rank - a.rank)
 }
 
+/**
+ * Find notes related to a given note using Vectorize.
+ */
 export async function findRelated(
-  sql: NeonQueryFunction<false, false>,
+  vectorize: VectorizeIndex,
+  db: Db,
   noteId: string,
   minimumSimilarity: number,
   limit = 5,
 ): Promise<SearchResult[]> {
-  const [note] = await sql`
-    SELECT "Embedding" FROM "Notes" WHERE "Id" = ${noteId} AND "Embedding" IS NOT NULL
-  ` as { Embedding: number[] | null }[]
+  // Get the vector for this note from Vectorize
+  const vectors = await vectorize.getByIds([noteId])
+  if (!vectors.length || !vectors[0]?.values) return []
 
-  if (!note?.Embedding) return []
+  const vecResults = await vectorize.query(vectors[0].values, {
+    topK: limit + 1, // +1 to exclude self
+    returnMetadata: 'all',
+  })
 
-  const vec = toVectorLiteral(note.Embedding)
-  const results = await sql`
-    SELECT "Id" AS "noteId",
-           "Title" AS "title",
-           CASE WHEN LENGTH("Content") > 200
-                THEN LEFT("Content", 200) || '...'
-                ELSE "Content"
-           END AS "snippet",
-           (1.0 - ("Embedding"::vector <=> ${vec}::vector))::float8 AS "rank"
-    FROM "Notes"
-    WHERE "Embedding" IS NOT NULL
-      AND "Id" != ${noteId}
-      AND 1.0 - ("Embedding"::vector <=> ${vec}::vector) >= ${minimumSimilarity}
-    ORDER BY "Embedding"::vector <=> ${vec}::vector
-    LIMIT ${limit}
-  `
-  return results as unknown as SearchResult[]
+  const matches = vecResults.matches
+    .filter(m => m.id !== noteId && (m.score ?? 0) >= minimumSimilarity)
+    .slice(0, limit)
+
+  if (!matches.length) return []
+
+  const ids = matches.map(m => m.id)
+  const placeholders = ids.map(() => '?').join(',')
+  const { results } = await db.$client
+    .prepare(`
+      SELECT "Id" AS id, "Title" AS title,
+             CASE WHEN LENGTH("Content") > 200
+                  THEN SUBSTR("Content", 1, 200) || '...'
+                  ELSE "Content"
+             END AS snippet
+      FROM "Notes"
+      WHERE "Id" IN (${placeholders})
+    `)
+    .bind(...ids)
+    .all<{ id: string; title: string; snippet: string }>()
+
+  const noteMap = new Map((results ?? []).map(r => [r.id, r]))
+
+  return matches
+    .map(m => {
+      const note = noteMap.get(m.id)
+      if (!note) return null
+      return {
+        noteId: m.id,
+        title: note.title,
+        snippet: note.snippet,
+        rank: m.score ?? 0,
+      }
+    })
+    .filter((r): r is SearchResult => r !== null)
 }
 
 function normalizeRanks(results: SearchResult[]): SearchResult[] {
