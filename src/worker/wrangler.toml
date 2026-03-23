@@ -26,12 +26,8 @@ binding = "ENRICH_QUEUE"
 # Blog generation: Monday 09:00 UTC | Social generation: daily 09:00 UTC
 crons = ["0 9 * * MON", "0 9 * * *"]
 
-# ── Custom domain routing ─────────────────────────────────────────────────────
-# Worker Route on postpilot.cc/api/* takes priority over Cloudflare Pages.
-# All other requests (UI) continue to be served by Pages.
-[[routes]]
-pattern = "postpilot.cc/api/*"
-zone_name = "postpilot.cc"
+# Custom domain configured in CF Dashboard → Workers → zettl → Domains & Routes
+# Routes all postpilot.cc traffic to this worker.
 
 # ── Cloudflare Secrets Store ───────────────────────────────────────────────────
 # Secrets Store ID: e328ab1e3e624d24b1712d38aad51017
