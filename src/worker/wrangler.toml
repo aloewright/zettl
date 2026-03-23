@@ -25,6 +25,13 @@ binding = "ENRICH_QUEUE"
 # Blog generation: Monday 09:00 UTC | Social generation: daily 09:00 UTC
 crons = ["0 9 * * MON", "0 9 * * *"]
 
+# ── Custom domain routing ─────────────────────────────────────────────────────
+# Worker Route on postpilot.cc/api/* takes priority over Cloudflare Pages.
+# All other requests (UI) continue to be served by Pages.
+[[routes]]
+pattern = "postpilot.cc/api/*"
+zone_name = "postpilot.cc"
+
 # ── Secrets (wrangler secret put NAME --name zettel-api) ─────────────────────
 # DATABASE_URL          Neon PostgreSQL connection string
 # OPENAI_API_KEY        OpenAI API key
