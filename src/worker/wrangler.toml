@@ -33,56 +33,56 @@ pattern = "postpilot.cc/api/*"
 zone_name = "postpilot.cc"
 
 # ── Cloudflare Secrets Store ───────────────────────────────────────────────────
-# Replace YOUR_STORE_ID with the ID from Cloudflare Dashboard → Secrets Store.
+# Secrets Store ID: e328ab1e3e624d24b1712d38aad51017
 # Create each secret in the store with the same name as the binding.
 
 [[secrets_store_secrets]]
 binding = "DATABASE_URL"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "DATABASE_URL"
 
 [[secrets_store_secrets]]
 binding = "OPENAI_API_KEY"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "OPENAI_API_KEY"
 
 [[secrets_store_secrets]]
 binding = "KINDE_DOMAIN"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "KINDE_DOMAIN"
 
 # Optional — omit the binding entirely if not needed
 [[secrets_store_secrets]]
 binding = "KINDE_AUDIENCE"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "KINDE_AUDIENCE"
 
 [[secrets_store_secrets]]
 binding = "CF_AI_GATEWAY_URL"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "CF_AI_GATEWAY_URL"
 
 [[secrets_store_secrets]]
 binding = "CAPTURE_WEBHOOK_SECRET"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "CAPTURE_WEBHOOK_SECRET"
 
 [[secrets_store_secrets]]
 binding = "TELEGRAM_BOT_TOKEN"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "TELEGRAM_BOT_TOKEN"
 
 [[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "BRAVE_API_KEY"
 
 [[secrets_store_secrets]]
 binding = "READWISE_ACCESS_TOKEN"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "READWISE_ACCESS_TOKEN"
 
 [[secrets_store_secrets]]
 binding = "ELEVENLABS_API_KEY"
-store_id = "YOUR_STORE_ID"
+store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "ELEVENLABS_API_KEY"
