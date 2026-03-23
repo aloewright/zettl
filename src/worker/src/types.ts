@@ -11,6 +11,7 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
   READWISE_ACCESS_TOKEN?: SecretsStoreSecret  // optional binding
+  ELEVENLABS_API_KEY?: SecretsStoreSecret     // optional binding
   // Queue bindings
   EMBED_QUEUE: Queue<EmbedQueueMessage>
   ENRICH_QUEUE: Queue<EnrichQueueMessage>

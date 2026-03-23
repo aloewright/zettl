@@ -81,3 +81,8 @@ secret_name = "BRAVE_API_KEY"
 binding = "READWISE_ACCESS_TOKEN"
 store_id = "YOUR_STORE_ID"
 secret_name = "READWISE_ACCESS_TOKEN"
+
+[[secrets_store_secrets]]
+binding = "ELEVENLABS_API_KEY"
+store_id = "YOUR_STORE_ID"
+secret_name = "ELEVENLABS_API_KEY"
