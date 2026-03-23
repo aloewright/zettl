@@ -22,6 +22,10 @@ interface ParsedNote {
   content: string
   tags: string[]
   createdAt?: Date
+  noteType?: string
+  sourceAuthor?: string | null
+  sourceType?: string | null
+  sourceUrl?: string | null
 }
 
 function isNotionFormat(text: string): boolean {
@@ -40,7 +44,86 @@ function parseNotionDate(s: string): Date | undefined {
   return isNaN(d.getTime()) ? undefined : d
 }
 
+// ── Readwise format ────────────────────────────────────────────────────────────────
+//
+// Readwise exports markdown files with this structure:
+//   # Title
+//   ![cover](url)
+//   ### Metadata
+//   - Author: ...
+//   - Full Title: ...
+//   - Category: #books | #articles | #podcasts
+//   - URL: ...          (optional, present in articles/podcasts)
+//   ### Highlights
+//   - highlight text
+
+function isReadwiseFormat(content: string): boolean {
+  return content.includes('### Metadata') &&
+    content.includes('- Author:') &&
+    content.includes('### Highlights')
+}
+
+function parseReadwiseFile(fileName: string, content: string): ParsedNote {
+  const lines = content.split('\n')
+  let title = fileName.replace(/\.md$/i, '')
+  let author: string | null = null
+  let category = ''
+  let url: string | null = null
+  let highlightsStart = -1
+  let inMetadata = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].replace(/\r$/, '')
+    const t = raw.trim()
+
+    if (t.startsWith('# ') && i === 0) {
+      title = t.slice(2).trim()
+    } else if (t === '### Metadata') {
+      inMetadata = true
+    } else if (t === '### Highlights') {
+      highlightsStart = i
+      break
+    } else if (inMetadata) {
+      if (t.startsWith('- Full Title:')) {
+        const v = t.slice('- Full Title:'.length).trim()
+        if (v) title = v
+      } else if (t.startsWith('- Author:')) {
+        const v = t.slice('- Author:'.length).trim()
+        if (v && v !== 'None') author = v
+      } else if (t.startsWith('- Category:')) {
+        category = t.slice('- Category:'.length).trim().replace(/^#/, '')
+      } else if (t.startsWith('- URL:')) {
+        const v = t.slice('- URL:'.length).trim()
+        if (v) url = v
+      }
+    }
+  }
+
+  // Highlights section as content; fall back to whole file if not found
+  const highlightContent = highlightsStart >= 0
+    ? lines.slice(highlightsStart + 1).join('\n').trim()
+    : content.trim()
+
+  const sourceType =
+    category === 'books' ? 'book'
+    : category === 'articles' ? 'article'
+    : category === 'podcasts' ? 'podcast'
+    : category ? 'other'
+    : null
+
+  return {
+    title,
+    content: highlightContent || content.trim(),
+    tags: category ? [category] : [],
+    noteType: 'Source',
+    sourceAuthor: author,
+    sourceType,
+    sourceUrl: url,
+  }
+}
+
 function parseMarkdownFile(fileName: string, content: string): ParsedNote {
+  if (isReadwiseFormat(content)) return parseReadwiseFile(fileName, content)
   if (isNotionFormat(content)) {
     const lines = content.split('\n')
     let title = ''
@@ -144,13 +227,13 @@ router.post('/', async (c) => {
           title: parsed.title,
           content: parsed.content,
           status: 'Permanent',
-          noteType: 'Regular',
+          noteType: parsed.noteType ?? 'Regular',
           source: null,
-          sourceAuthor: null,
+          sourceAuthor: parsed.sourceAuthor ?? null,
           sourceTitle: null,
-          sourceUrl: null,
+          sourceUrl: parsed.sourceUrl ?? null,
           sourceYear: null,
-          sourceType: null,
+          sourceType: parsed.sourceType ?? null,
           createdAt: parsed.createdAt ? parsed.createdAt.toISOString() : now,
           updatedAt: now,
           embedStatus: 'Pending',
