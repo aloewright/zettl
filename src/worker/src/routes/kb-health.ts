@@ -118,7 +118,7 @@ router.post('/link', async (c) => {
 // POST /api/kb-health/summarize — generate a short AI summary for a note
 router.post('/summarize', async (c) => {
   const db = c.get('db')
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
   const body = await c.req.json<{ noteId: string }>()
   if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
 
@@ -147,7 +147,7 @@ router.post('/summarize', async (c) => {
 // POST /api/kb-health/split — suggest split points for a large note
 router.post('/split', async (c) => {
   const db = c.get('db')
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
   const body = await c.req.json<{ noteId: string }>()
   if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
 

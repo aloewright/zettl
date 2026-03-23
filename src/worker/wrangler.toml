@@ -32,12 +32,47 @@ crons = ["0 9 * * MON", "0 9 * * *"]
 pattern = "postpilot.cc/api/*"
 zone_name = "postpilot.cc"
 
-# ── Secrets (wrangler secret put NAME --name zettel-api) ─────────────────────
-# DATABASE_URL          Neon PostgreSQL connection string
-# OPENAI_API_KEY        OpenAI API key
-# KINDE_DOMAIN          https://aftuh.kinde.com
-# KINDE_AUDIENCE        (optional) Kinde API audience
-# CF_AI_GATEWAY_URL     (optional) https://gateway.ai.cloudflare.com/v1/{acct}/{gw}
-# CAPTURE_WEBHOOK_SECRET  Shared secret for email webhook validation
-# TELEGRAM_BOT_TOKEN    (optional) Telegram bot token
-# BRAVE_API_KEY         (optional) Brave Search API key for research agent
+# ── Cloudflare Secrets Store ───────────────────────────────────────────────────
+# Replace YOUR_STORE_ID with the ID from Cloudflare Dashboard → Secrets Store.
+# Create each secret in the store with the same name as the binding.
+
+[[secrets_store_secrets]]
+binding = "DATABASE_URL"
+store_id = "YOUR_STORE_ID"
+secret_name = "DATABASE_URL"
+
+[[secrets_store_secrets]]
+binding = "OPENAI_API_KEY"
+store_id = "YOUR_STORE_ID"
+secret_name = "OPENAI_API_KEY"
+
+[[secrets_store_secrets]]
+binding = "KINDE_DOMAIN"
+store_id = "YOUR_STORE_ID"
+secret_name = "KINDE_DOMAIN"
+
+# Optional — omit the binding entirely if not needed
+[[secrets_store_secrets]]
+binding = "KINDE_AUDIENCE"
+store_id = "YOUR_STORE_ID"
+secret_name = "KINDE_AUDIENCE"
+
+[[secrets_store_secrets]]
+binding = "CF_AI_GATEWAY_URL"
+store_id = "YOUR_STORE_ID"
+secret_name = "CF_AI_GATEWAY_URL"
+
+[[secrets_store_secrets]]
+binding = "CAPTURE_WEBHOOK_SECRET"
+store_id = "YOUR_STORE_ID"
+secret_name = "CAPTURE_WEBHOOK_SECRET"
+
+[[secrets_store_secrets]]
+binding = "TELEGRAM_BOT_TOKEN"
+store_id = "YOUR_STORE_ID"
+secret_name = "TELEGRAM_BOT_TOKEN"
+
+[[secrets_store_secrets]]
+binding = "BRAVE_API_KEY"
+store_id = "YOUR_STORE_ID"
+secret_name = "BRAVE_API_KEY"

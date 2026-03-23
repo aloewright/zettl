@@ -7,8 +7,9 @@ import { createDb, createSql } from '../db/client'
  * Injects db + sql into context. Must run before any route handler.
  */
 export const dbMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
-  c.set('db', createDb(c.env.DATABASE_URL))
-  c.set('sql', createSql(c.env.DATABASE_URL))
+  const dbUrl = await c.env.DATABASE_URL.get()
+  c.set('db', createDb(dbUrl))
+  c.set('sql', createSql(dbUrl))
   await next()
 })
 
@@ -17,7 +18,17 @@ export const dbMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
  * When KINDE_DOMAIN is not set the middleware is skipped (local dev / Docker).
  */
 export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
+  // If KINDE_DOMAIN binding is absent, skip auth (local dev without Secrets Store)
   if (!c.env.KINDE_DOMAIN) {
+    c.set('userId', 'anonymous')
+    await next()
+    return
+  }
+
+  let kindeDomain: string
+  try {
+    kindeDomain = await c.env.KINDE_DOMAIN.get()
+  } catch {
     c.set('userId', 'anonymous')
     await next()
     return
@@ -31,12 +42,16 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   const token = authHeader.slice(7)
 
   try {
+    const kindeAudience = c.env.KINDE_AUDIENCE
+      ? await c.env.KINDE_AUDIENCE.get().catch(() => undefined)
+      : undefined
+
     const JWKS = createRemoteJWKSet(
-      new URL(`${c.env.KINDE_DOMAIN}/.well-known/jwks`),
+      new URL(`${kindeDomain}/.well-known/jwks`),
     )
     const { payload } = await jwtVerify(token, JWKS, {
-      issuer: c.env.KINDE_DOMAIN,
-      ...(c.env.KINDE_AUDIENCE ? { audience: c.env.KINDE_AUDIENCE } : {}),
+      issuer: kindeDomain,
+      ...(kindeAudience ? { audience: kindeAudience } : {}),
     })
     c.set('userId', (payload.sub as string) ?? 'unknown')
   } catch {

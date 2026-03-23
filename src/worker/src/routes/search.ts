@@ -25,7 +25,7 @@ router.get('/', async (c) => {
     return c.json(results)
   }
 
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
 
   if (mode === 'semantic') {
     const results = await semanticSearch(rawSql, openai, q, weights)

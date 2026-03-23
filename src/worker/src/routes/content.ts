@@ -52,7 +52,7 @@ router.get('/generations/:id', async (c) => {
 
 router.post('/generations', async (c) => {
   const db = c.get('db')
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
   const rawSql = c.get('sql')
 
   const body = await c.req.json<{

@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "zettel-web-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "src/zettel-web-ui",
+      "port": 5173
+    },
+    {
+      "name": "zettel-api (worker)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "src/worker",
+      "port": 8787
+    },
+    {
+      "name": "zettel-mobile",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start"],
+      "cwd": "src/zettel-mobile",
+      "port": 8081
+    }
+  ]
+}

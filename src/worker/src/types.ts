@@ -1,18 +1,26 @@
 import type { createDb, createSql } from './db/client'
 
 export interface Env {
-  // Secrets
-  DATABASE_URL: string
-  OPENAI_API_KEY: string
-  KINDE_DOMAIN: string
-  KINDE_AUDIENCE?: string
-  CF_AI_GATEWAY_URL?: string
-  CAPTURE_WEBHOOK_SECRET?: string
-  TELEGRAM_BOT_TOKEN?: string
-  BRAVE_API_KEY?: string
+  // Cloudflare Secrets Store bindings — access via await env.X.get()
+  DATABASE_URL: SecretsStoreSecret
+  OPENAI_API_KEY: SecretsStoreSecret
+  KINDE_DOMAIN: SecretsStoreSecret
+  KINDE_AUDIENCE?: SecretsStoreSecret   // optional binding
+  CF_AI_GATEWAY_URL?: SecretsStoreSecret // optional binding
+  CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
+  TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
+  BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
   // Queue bindings
   EMBED_QUEUE: Queue<EmbedQueueMessage>
   ENRICH_QUEUE: Queue<EnrichQueueMessage>
+}
+
+/** Resolve an optional SecretsStoreSecret, returning undefined if unbound or missing. */
+export async function getOptionalSecret(
+  binding: SecretsStoreSecret | undefined,
+): Promise<string | undefined> {
+  if (!binding) return undefined
+  try { return await binding.get() } catch { return undefined }
 }
 
 export interface EmbedQueueMessage {

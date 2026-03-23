@@ -1,3 +1,4 @@
+import OpenAI from 'openai'
 import { eq, and, sql } from 'drizzle-orm'
 import type { Env } from '../types'
 import { makeId } from '../types'
@@ -57,7 +58,7 @@ async function findClusterNotes(
 }
 
 async function generateContent(
-  openai: ReturnType<typeof buildOpenAI>,
+  openai: OpenAI,
   medium: Medium,
   seedNote: ClusterNote,
   clusterNotes: ClusterNote[],
@@ -108,9 +109,10 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
 }
 
 export async function runContentCron(env: Env, medium: Medium): Promise<void> {
-  const rawSql = createSql(env.DATABASE_URL)
-  const db = createDb(env.DATABASE_URL)
-  const openai = buildOpenAI(env)
+  const dbUrl = await env.DATABASE_URL.get()
+  const rawSql = createSql(dbUrl)
+  const db = createDb(dbUrl)
+  const openai = await buildOpenAI(env)
 
   const seedNote = await pickSeedNote(db, medium)
   if (!seedNote) {

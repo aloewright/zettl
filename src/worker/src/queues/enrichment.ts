@@ -49,7 +49,7 @@ export async function handleEnrichMessage(
   message: Message<EnrichQueueMessage>,
   env: Env,
 ): Promise<void> {
-  const sql = neon(env.DATABASE_URL)
+  const sql = neon(await env.DATABASE_URL.get())
   const { noteId, url } = message.body
 
   await sql`

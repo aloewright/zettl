@@ -1,11 +1,14 @@
 import OpenAI from 'openai'
 import type { Env } from '../types'
 
-export function buildOpenAI(env: Env): OpenAI {
-  const baseURL = env.CF_AI_GATEWAY_URL
-    ? `${env.CF_AI_GATEWAY_URL.replace(/\/$/, '')}/openai/v1`
-    : undefined
-  return new OpenAI({ apiKey: env.OPENAI_API_KEY, ...(baseURL ? { baseURL } : {}) })
+export async function buildOpenAI(env: Env): Promise<OpenAI> {
+  const apiKey = await env.OPENAI_API_KEY.get()
+  let baseURL: string | undefined
+  if (env.CF_AI_GATEWAY_URL) {
+    const gatewayUrl = await env.CF_AI_GATEWAY_URL.get().catch(() => '')
+    if (gatewayUrl) baseURL = `${gatewayUrl.replace(/\/$/, '')}/openai/v1`
+  }
+  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) })
 }
 
 export async function generateEmbedding(

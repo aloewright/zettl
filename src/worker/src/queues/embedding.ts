@@ -6,7 +6,7 @@ export async function handleEmbedMessage(
   message: Message<EmbedQueueMessage>,
   env: Env,
 ): Promise<void> {
-  const sql = neon(env.DATABASE_URL)
+  const sql = neon(await env.DATABASE_URL.get())
   const { noteId } = message.body
 
   // Mark in-progress
@@ -26,7 +26,7 @@ export async function handleEmbedMessage(
       return
     }
 
-    const openai = buildOpenAI(env)
+    const openai = await buildOpenAI(env)
     const text = `${note.Title}\n\n${note.Content}`
     const embedding = await generateEmbedding(openai, text)
     const vec = toVectorLiteral(embedding)

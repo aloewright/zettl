@@ -7,16 +7,19 @@ import { notes } from '../db/schema'
 const router = new Hono<HonoEnv>()
 
 // Shared secret auth for webhook sources (Telegram bot, email forwarder, etc.)
-function checkWebhookSecret(c: Context<HonoEnv>): boolean {
-  const secret = c.env.CAPTURE_WEBHOOK_SECRET
-  if (!secret) return true // not configured → allow all (dev)
-  const header = c.req.header('X-Webhook-Secret')
-  return header === secret
+async function checkWebhookSecret(c: Context<HonoEnv>): Promise<boolean> {
+  if (!c.env.CAPTURE_WEBHOOK_SECRET) return true // binding absent → dev mode
+  try {
+    const secret = await c.env.CAPTURE_WEBHOOK_SECRET.get()
+    return c.req.header('X-Webhook-Secret') === secret
+  } catch {
+    return true // secret not in store → allow
+  }
 }
 
 // POST /api/capture/email
 router.post('/email', async (c) => {
-  if (!checkWebhookSecret(c)) return c.json({ error: 'Unauthorized' }, 401)
+  if (!await checkWebhookSecret(c)) return c.json({ error: 'Unauthorized' }, 401)
 
   const db = c.get('db')
   const body = await c.req.json<{
@@ -60,7 +63,7 @@ router.post('/email', async (c) => {
 
 // POST /api/capture/telegram
 router.post('/telegram', async (c) => {
-  if (!checkWebhookSecret(c)) return c.json({ error: 'Unauthorized' }, 401)
+  if (!await checkWebhookSecret(c)) return c.json({ error: 'Unauthorized' }, 401)
 
   const db = c.get('db')
   const body = await c.req.json<{

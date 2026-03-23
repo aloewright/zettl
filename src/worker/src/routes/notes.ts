@@ -111,7 +111,7 @@ router.get('/search-titles', async (c) => {
 })
 
 router.post('/check-duplicate', async (c) => {
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
   const rawSql = c.get('sql')
   const body = await c.req.json<{ content: string; minimumSimilarity?: number }>()
   if (!body.content) return c.json({ error: 'content required' }, 400)
@@ -376,7 +376,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
 router.get('/:id/suggested-tags', async (c) => {
   const db = c.get('db')
   const rawSql = c.get('sql')
-  const openai = buildOpenAI(c.env)
+  const openai = await buildOpenAI(c.env)
   const id = c.req.param('id')
 
   const [note] = await db.select().from(notes).where(eq(notes.id, id))
