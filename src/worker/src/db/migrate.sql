@@ -139,7 +139,7 @@ CREATE INDEX IF NOT EXISTS "IX_ResearchTasks_AgendaId" ON "ResearchTasks"("Agend
 
 CREATE TABLE IF NOT EXISTS "ResearchFindings" (
   "Id"                    varchar(21)   PRIMARY KEY,
-  "TaskId"                varchar(21)   NOT NULL REFERENCES "ResearchTasks"("TaskId"),
+  "TaskId"                varchar(21)   NOT NULL REFERENCES "ResearchTasks"("Id"),
   "Title"                 text          NOT NULL,
   "Synthesis"             text          NOT NULL,
   "SourceUrl"             text          NOT NULL,
