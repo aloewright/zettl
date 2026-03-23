@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { desc } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
-import { makeId } from '../types'
+import { makeId, isoNow } from '../types'
 import { notes, noteTags } from '../db/schema'
 
 const router = new Hono<HonoEnv>()
@@ -128,7 +128,6 @@ router.post('/', async (c) => {
     const files = raw as Array<{ fileName: string; content: string }>
     let imported = 0
     let skipped = 0
-    const now = new Date()
 
     for (const file of files) {
       if (!file.fileName || !file.content) { skipped++; continue }
@@ -138,6 +137,7 @@ router.post('/', async (c) => {
       if (!parsed.title || !parsed.content) { skipped++; continue }
 
       const id = makeId()
+      const now = isoNow()
       try {
         await db.insert(notes).values({
           id,
@@ -151,7 +151,7 @@ router.post('/', async (c) => {
           sourceUrl: null,
           sourceYear: null,
           sourceType: null,
-          createdAt: parsed.createdAt ?? now,
+          createdAt: parsed.createdAt ? parsed.createdAt.toISOString() : now,
           updatedAt: now,
           embedStatus: 'Pending',
         })
@@ -197,12 +197,12 @@ router.post('/', async (c) => {
 
   let imported = 0
   let skipped = 0
-  const now = new Date()
 
   for (const n of body.notes) {
     if (!n.title || !n.content) { skipped++; continue }
 
     const id = makeId()
+    const now = isoNow()
     try {
       await db.insert(notes).values({
         id,
@@ -216,8 +216,8 @@ router.post('/', async (c) => {
         sourceUrl: n.sourceUrl ?? null,
         sourceYear: n.sourceYear ?? null,
         sourceType: n.sourceType ?? null,
-        createdAt: n.createdAt ? new Date(n.createdAt) : now,
-        updatedAt: n.updatedAt ? new Date(n.updatedAt) : now,
+        createdAt: n.createdAt ?? now,
+        updatedAt: n.updatedAt ?? now,
         embedStatus: 'Pending',
       })
 
