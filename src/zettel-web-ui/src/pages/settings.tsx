@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, Upload, Download, RefreshCw, Activity, Bot, Loader2 } from 'lucide-react'
+import { ArrowLeft, Upload, Download, RefreshCw, Activity, Bot, Loader2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -8,6 +8,7 @@ import { useReEmbed } from '@/hooks/use-notes'
 import { useHealth } from '@/hooks/use-health'
 import { useModelSettings, useAvailableModels, useUpdateModel } from '@/hooks/use-settings'
 import { importNotes, exportNotes } from '@/api/import-export'
+import { logout } from '@/auth'
 import { toast } from 'sonner'
 
 export function SettingsPage() {
@@ -335,6 +336,22 @@ export function SettingsPage() {
         ) : (
           <p className="text-sm text-muted-foreground">Loading health data...</p>
         )}
+      </section>
+
+      <Separator className="my-6" />
+
+      {/* Account */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Account</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={logout}
+          className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Sign out
+        </Button>
       </section>
     </div>
   )

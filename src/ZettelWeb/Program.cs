@@ -179,10 +179,20 @@ builder.Services.AddSingleton(appSettingsCache);
 
 // DynamicChatClient reads from AppSettingsCache on every call so model changes take
 // effect immediately without a restart. Falls back to ContentGeneration:* appsettings.
+// Provider must be "openrouter" or "google"; treat legacy "openai" as "openrouter".
 var cgDefaultProvider = builder.Configuration["ContentGeneration:Provider"] ?? "openrouter";
-var cgDefaultModel    = builder.Configuration["ContentGeneration:Model"] ?? "";
-var openRouterApiKey  = builder.Configuration["OpenRouter:ApiKey"] ?? "";
-var googleApiKey      = builder.Configuration["Google:ApiKey"] ?? "";
+if (string.Equals(cgDefaultProvider, "openai", StringComparison.OrdinalIgnoreCase))
+    cgDefaultProvider = "openrouter";
+var cgDefaultModel = builder.Configuration["ContentGeneration:Model"] ?? "";
+
+// ContentGeneration:ApiKey is the legacy key; honour it when the new provider-specific
+// keys are not yet configured so existing deployments keep working.
+var legacyCgApiKey   = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
+var openRouterApiKey = builder.Configuration["OpenRouter:ApiKey"]
+    ?? (cgDefaultProvider.Equals("openrouter", StringComparison.OrdinalIgnoreCase) ? legacyCgApiKey : "");
+var googleApiKey = builder.Configuration["Google:ApiKey"]
+    ?? (cgDefaultProvider.Equals("google", StringComparison.OrdinalIgnoreCase) ? legacyCgApiKey : "");
+
 builder.Services.AddSingleton<IChatClient>(new ZettelWeb.Services.DynamicChatClient(
     appSettingsCache, aiGatewayUrl ?? "", openRouterApiKey, googleApiKey,
     cgDefaultProvider, cgDefaultModel));

@@ -23,7 +23,7 @@ public class ZettelDbContext : DbContext
     public DbSet<ResearchFinding> ResearchFindings => Set<ResearchFinding>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
-    protected override void OnModelCreating
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("vector");
 
