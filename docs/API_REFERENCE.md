@@ -1,16 +1,16 @@
 # API Reference
 
-Last Updated: 2026-02-24
+Last Updated: 2026-03-24
 
 ---
 
 ## Base URL
 
 ```
-http://localhost:5000
+https://postpilot.cc
 ```
 
-All endpoints return `application/json` unless stated otherwise. All `DateTime` values are UTC ISO 8601 strings.
+All endpoints return `application/json` unless stated otherwise. All `DateTime` values are UTC ISO 8601 strings. All `/api/*` routes require Cloudflare Access authentication.
 
 ---
 
@@ -509,3 +509,172 @@ Accept a finding — creates a fleeting note from the synthesis.
 Dismiss a finding.
 
 **Response:** `204 No Content`
+
+---
+
+## Text-to-Speech / Speech-to-Text
+
+All audio endpoints route through **Cloudflare AI Gateway** with a 3-tier fallback:
+1. Stored API key (ElevenLabs) via gateway
+2. Unified billing via AI Gateway
+3. Workers AI (Deepgram Aura 2 for TTS, Whisper for STT)
+
+### `POST /api/tts`
+Convert text to speech. Returns raw audio bytes.
+
+**Body:**
+```json
+{
+  "text": "string (required)",
+  "voice": "string (optional, default: alloy)",
+  "model": "string (optional)",
+  "speed": 1.0,
+  "language": "string (optional)"
+}
+```
+
+**Response:** `200 OK` -- `audio/mpeg` binary
+
+---
+
+### `POST /api/tts/transcribe`
+Transcribe audio to text. Accepts raw audio binary (`Content-Type: application/octet-stream`) or JSON with base64-encoded audio.
+
+**JSON body (alternative):**
+```json
+{
+  "audio": "base64-encoded audio data",
+  "language": "string (optional)"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "text": "transcribed text",
+  "language": "en",
+  "segments": [
+    { "start": 0.0, "end": 2.5, "text": "Hello world" }
+  ]
+}
+```
+
+---
+
+### `GET /api/tts/voices`
+List available voices.
+
+**Response:** `200 OK`
+```json
+[
+  { "voice_id": "alloy", "name": "Alloy", "category": "universal" }
+]
+```
+
+---
+
+## KB Health (Extended)
+
+### `GET /api/kb-health/missing-embeddings`
+List notes with `EmbedStatus` of Pending, Failed, or Stale.
+
+**Response:** `200 OK` -- array of `{ id, title, embedStatus, embedError }`
+
+---
+
+### `POST /api/kb-health/missing-embeddings/{noteId}/requeue`
+Reset a single note's embed status and send it to the embedding queue.
+
+**Response:** `200 OK` -- `{ queued: true }`
+
+---
+
+### `POST /api/kb-health/missing-embeddings/requeue-all`
+Bulk requeue all Pending/Stale/Failed notes for embedding.
+
+**Response:** `200 OK`
+```json
+{ "total": 46, "queued": 46 }
+```
+
+---
+
+### `GET /api/kb-health/large-notes`
+List notes exceeding a character count threshold.
+
+**Query params:** `threshold` (default 2000)
+
+**Response:** `200 OK` -- array of `{ id, title, characterCount }`
+
+---
+
+### `POST /api/kb-health/large-notes/{noteId}/summarize`
+AI-powered summarisation of a large note. Replaces the note content with a concise version.
+
+**Response:** `200 OK`
+```json
+{ "noteId": "string", "originalLength": 5000, "summarizedLength": 800, "stillLarge": false }
+```
+
+---
+
+### `POST /api/kb-health/large-notes/{noteId}/split-suggestions`
+AI analysis of how a large note could be split into atomic notes.
+
+**Response:** `200 OK`
+```json
+{
+  "noteId": "string",
+  "originalTitle": "string",
+  "notes": [
+    { "title": "Atomic Note 1", "content": "..." },
+    { "title": "Atomic Note 2", "content": "..." }
+  ]
+}
+```
+
+---
+
+### `POST /api/kb-health/large-notes/{noteId}/apply-split`
+Create new notes from split suggestions.
+
+**Body:**
+```json
+{ "notes": [{ "title": "string", "content": "string" }] }
+```
+
+**Response:** `200 OK` -- `{ createdNoteIds: ["string"] }`
+
+---
+
+## Settings
+
+### `GET /api/settings`
+Get current LLM provider and model.
+
+**Response:** `200 OK` -- `{ provider: "openrouter", model: "openai/gpt-4o" }`
+
+### `PUT /api/settings/model`
+Update LLM provider and model.
+
+**Body:** `{ "provider": "openrouter | google | workersai", "model": "string" }`
+
+**Response:** `200 OK`
+
+---
+
+## Streaming
+
+### `POST /api/generate/stream`
+SSE streaming chat completion.
+
+**Body:**
+```json
+{
+  "messages": [{ "role": "system | user | assistant", "content": "string" }],
+  "maxTokens": 2000,
+  "temperature": 0.7
+}
+```
+
+**Response:** `200 OK` -- `text/event-stream`
