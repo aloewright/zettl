@@ -399,6 +399,32 @@ router.post('/large-notes/:noteId/apply-split', async (c) => {
   return c.json({ createdNoteIds })
 })
 
+// POST /api/kb-health/missing-embeddings/requeue-all — bulk requeue all Pending/Stale/Failed notes
+router.post('/missing-embeddings/requeue-all', async (c) => {
+  const db = c.get('db')
+
+  const rows = await db.select({ id: notes.id }).from(notes)
+    .where(sql`"EmbedStatus" IN ('Pending', 'Failed', 'Stale')`)
+
+  let queued = 0
+  for (const row of rows) {
+    await db.update(notes).set({
+      embedStatus: 'Pending',
+      embedRetryCount: 0,
+      embedError: null,
+    }).where(eq(notes.id, row.id))
+
+    try {
+      await c.env.EMBED_QUEUE.send({ noteId: row.id })
+      queued++
+    } catch (err) {
+      console.error(`[kb-health] Failed to queue embedding for ${row.id}:`, err)
+    }
+  }
+
+  return c.json({ total: rows.length, queued })
+})
+
 // ── Legacy routes (keep for backward compat) ─────────────────────────────────
 
 // GET /api/kb-health/orphans

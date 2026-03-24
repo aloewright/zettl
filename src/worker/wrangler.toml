@@ -2,7 +2,12 @@ name = "zettl"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
-logpush = true
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
 
 [assets]
 directory = "../zettel-web-ui/dist"

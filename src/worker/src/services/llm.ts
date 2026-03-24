@@ -43,13 +43,13 @@ export async function getLLMConfig(env: Env): Promise<LLMConfig> {
     const key = await getOptionalSecret(env.OPENROUTER_API_KEY)
     if (!key) {
       console.log('[llm] No OPENROUTER_API_KEY found, falling back to Workers AI')
-      return { provider: 'workersai', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }
+      return { provider: 'workersai', model: '@cf/moonshotai/kimi-k2.5' }
     }
   } else if (provider === 'google') {
     const key = await getOptionalSecret(env.GOOGLE_API_KEY)
     if (!key) {
       console.log('[llm] No GOOGLE_API_KEY found, falling back to Workers AI')
-      return { provider: 'workersai', model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast' }
+      return { provider: 'workersai', model: '@cf/moonshotai/kimi-k2.5' }
     }
   }
 
@@ -177,7 +177,7 @@ export async function chatCompletion(
 
   if (!apiKey) {
     console.warn(`[llm] No API key for ${config.provider}, falling back to Workers AI`)
-    return workersAIChatCompletion(env, '@cf/meta/llama-3.3-70b-instruct-fp8-fast', opts)
+    return workersAIChatCompletion(env, '@cf/moonshotai/kimi-k2.5', opts)
   }
 
   const body: Record<string, unknown> = {
@@ -204,7 +204,7 @@ export async function chatCompletion(
     // If external provider fails, try Workers AI as last resort
     console.warn(`[llm] ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}. Falling back to Workers AI.`)
     try {
-      return await workersAIChatCompletion(env, '@cf/meta/llama-3.3-70b-instruct-fp8-fast', opts)
+      return await workersAIChatCompletion(env, '@cf/moonshotai/kimi-k2.5', opts)
     } catch (fallbackErr) {
       throw new Error(`LLM ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}`)
     }
@@ -234,7 +234,7 @@ export async function chatCompletionStream(
 
   if (!apiKey) {
     console.warn(`[llm] No API key for ${config.provider}, falling back to Workers AI stream`)
-    return workersAIChatCompletionStream(env, '@cf/meta/llama-3.3-70b-instruct-fp8-fast', opts)
+    return workersAIChatCompletionStream(env, '@cf/moonshotai/kimi-k2.5', opts)
   }
 
   const body: Record<string, unknown> = {
@@ -258,7 +258,7 @@ export async function chatCompletionStream(
     const errBody = await res.text().catch(() => '')
     console.warn(`[llm] Stream ${config.provider}/${config.model} returned ${res.status}. Falling back to Workers AI.`)
     try {
-      return await workersAIChatCompletionStream(env, '@cf/meta/llama-3.3-70b-instruct-fp8-fast', opts)
+      return await workersAIChatCompletionStream(env, '@cf/moonshotai/kimi-k2.5', opts)
     } catch {
       throw new Error(`LLM stream ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}`)
     }
