@@ -7,7 +7,7 @@ logpush = true
 [assets]
 directory = "../zettel-web-ui/dist"
 binding = "ASSETS"
-not_found_handling = "none"
+not_found_handling = "single-page-application"
 
 # ── Cloudflare D1 database ────────────────────────────────────────────────────
 [[d1_databases]]

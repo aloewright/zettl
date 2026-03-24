@@ -57,11 +57,29 @@ function LazyFallback() {
   )
 }
 
+function RouteErrorBoundary() {
+  return (
+    <div className="flex h-[calc(100vh-4rem)] flex-col items-center justify-center gap-4 px-4 text-center">
+      <p className="text-lg font-medium">Something went wrong</p>
+      <p className="text-sm text-muted-foreground">
+        A new version may have been deployed. Try refreshing the page.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background"
+      >
+        Refresh
+      </button>
+    </div>
+  )
+}
+
 export const router = createBrowserRouter([
   // Auth callback — outside AppShell, no auth required
   { path: '/callback', element: <CallbackPage /> },
   {
     element: <AppShell />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/notes/:id', element: <NotePage /> },
