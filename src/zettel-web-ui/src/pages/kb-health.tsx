@@ -441,7 +441,7 @@ function LargeNotesSection() {
                     {note.title}
                   </Link>
                   <Badge variant="outline" className="shrink-0 text-[10px]">
-                    {note.characterCount.toLocaleString()} chars
+                    {(note.characterCount ?? 0).toLocaleString()} chars
                   </Badge>
                 </div>
               </div>

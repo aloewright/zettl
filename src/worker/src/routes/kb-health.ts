@@ -187,7 +187,7 @@ router.get('/large-notes', async (c) => {
   const rows = await db.select({
     id: notes.id,
     title: notes.title,
-    contentLength: sql<number>`LENGTH("Content")`,
+    characterCount: sql<number>`LENGTH("Content")`,
   }).from(notes)
     .where(sql`LENGTH("Content") > ${threshold}`)
     .orderBy(sql`LENGTH("Content") DESC`)
