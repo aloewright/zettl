@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { eq, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
+import { makeId, isoNow } from '../types'
 import { notes, noteTags } from '../db/schema'
 import { chatCompletion } from '../services/llm'
 
@@ -143,23 +144,77 @@ router.get('/overview', async (c) => {
   })
 })
 
-// GET /api/kb-health/orphans — notes with no backlinks and no tags
-router.get('/orphans', async (c) => {
+// GET /api/kb-health/orphan/:noteId/suggestions — connection suggestions for an orphan
+router.get('/orphan/:noteId/suggestions', async (c) => {
+  const noteId = c.req.param('noteId')
+  const limit = parseInt(c.req.query('limit') ?? '5')
+
+  try {
+    const vectors = await c.env.vector_db.getByIds([noteId])
+    if (!vectors.length || !vectors[0]?.values) {
+      return c.json([])
+    }
+
+    const results = await c.env.vector_db.query(vectors[0].values, { topK: limit + 1 })
+    const matches = results.matches.filter(m => m.id !== noteId && (m.score ?? 0) > 0.4)
+
+    if (!matches.length) return c.json([])
+
+    const db = c.get('db')
+    const matchIds = matches.map(m => m.id)
+    const { results: noteRows } = await c.env.d1_db
+      .prepare(`SELECT "Id" AS id, "Title" AS title FROM "Notes" WHERE "Id" IN (${matchIds.map(() => '?').join(',')})`)
+      .bind(...matchIds)
+      .all<{ id: string; title: string }>()
+
+    const titleMap = new Map((noteRows ?? []).map(n => [n.id, n.title]))
+
+    return c.json(
+      matches
+        .map(m => ({
+          noteId: m.id,
+          title: titleMap.get(m.id) ?? '',
+          similarity: m.score ?? 0,
+        }))
+        .filter(s => s.title)
+        .slice(0, limit),
+    )
+  } catch {
+    return c.json([])
+  }
+})
+
+// POST /api/kb-health/orphan/:orphanId/link — add a wiki-link from orphan to target
+router.post('/orphan/:orphanId/link', async (c) => {
   const db = c.get('db')
+  const orphanId = c.req.param('orphanId')
+  const body = await c.req.json<{ targetNoteId: string }>()
 
-  const rows = await db.select({
-    id: notes.id,
-    title: notes.title,
-    createdAt: notes.createdAt,
-  }).from(notes)
-    .where(and(
-      eq(notes.status, 'Permanent'),
-      sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`,
-    ))
-    .orderBy(notes.createdAt)
-    .limit(50)
+  if (!body.targetNoteId) return c.json({ error: 'targetNoteId required' }, 400)
 
-  return c.json(rows)
+  const [[source], [target]] = await Promise.all([
+    db.select({ id: notes.id, content: notes.content }).from(notes)
+      .where(eq(notes.id, orphanId)),
+    db.select({ id: notes.id, title: notes.title }).from(notes)
+      .where(eq(notes.id, body.targetNoteId)),
+  ])
+
+  if (!source || !target) return c.json({ error: 'Note not found' }, 404)
+
+  const link = `\n\n[[${target.title}]]`
+  if (source.content.includes(`[[${target.title}]]`)) {
+    return c.json({ message: 'Link already exists' })
+  }
+
+  await db.update(notes).set({
+    content: source.content + link,
+    updatedAt: new Date().toISOString(),
+    embedStatus: 'Stale',
+  }).where(eq(notes.id, orphanId))
+
+  // Return the updated note
+  const [updated] = await db.select().from(notes).where(eq(notes.id, orphanId))
+  return c.json(updated)
 })
 
 // GET /api/kb-health/missing-embeddings
@@ -179,6 +234,30 @@ router.get('/missing-embeddings', async (c) => {
   return c.json(rows)
 })
 
+// POST /api/kb-health/missing-embeddings/:noteId/requeue
+router.post('/missing-embeddings/:noteId/requeue', async (c) => {
+  const db = c.get('db')
+  const noteId = c.req.param('noteId')
+
+  const [note] = await db.select({ id: notes.id }).from(notes).where(eq(notes.id, noteId))
+  if (!note) return c.json({ error: 'Not found' }, 404)
+
+  await db.update(notes).set({
+    embedStatus: 'Pending',
+    embedRetryCount: 0,
+    embedError: null,
+  }).where(eq(notes.id, noteId))
+
+  // If there's an embed queue, send a message
+  try {
+    await c.env.EMBED_QUEUE?.send({ noteId })
+  } catch {
+    // Queue may not be available, that's OK — cron will pick it up
+  }
+
+  return c.json({ queued: true })
+})
+
 // GET /api/kb-health/large-notes — notes with content > threshold chars
 router.get('/large-notes', async (c) => {
   const db = c.get('db')
@@ -196,72 +275,55 @@ router.get('/large-notes', async (c) => {
   return c.json(rows)
 })
 
-// POST /api/kb-health/link — add a wiki-link from one note to another
-router.post('/link', async (c) => {
+// POST /api/kb-health/large-notes/:noteId/summarize
+router.post('/large-notes/:noteId/summarize', async (c) => {
   const db = c.get('db')
-  const body = await c.req.json<{ sourceId: string; targetId: string }>()
-  if (!body.sourceId || !body.targetId) {
-    return c.json({ error: 'sourceId and targetId required' }, 400)
-  }
+  const noteId = c.req.param('noteId')
 
-  const [[source], [target]] = await Promise.all([
-    db.select({ id: notes.id, content: notes.content }).from(notes)
-      .where(eq(notes.id, body.sourceId)),
-    db.select({ id: notes.id, title: notes.title }).from(notes)
-      .where(eq(notes.id, body.targetId)),
-  ])
-
-  if (!source || !target) return c.json({ error: 'Note not found' }, 404)
-
-  const link = `\n\n[[${target.title}]]`
-  if (source.content.includes(`[[${target.title}]]`)) {
-    return c.json({ message: 'Link already exists' })
-  }
-
-  await db.update(notes).set({
-    content: source.content + link,
-    updatedAt: new Date().toISOString(),
-    embedStatus: 'Stale',
-  }).where(eq(notes.id, body.sourceId))
-
-  return c.json({ linked: true })
-})
-
-// POST /api/kb-health/summarize — generate a short AI summary for a note
-router.post('/summarize', async (c) => {
-  const db = c.get('db')
-  const body = await c.req.json<{ noteId: string }>()
-  if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
-
-  const [note] = await db.select({ title: notes.title, content: notes.content })
-    .from(notes).where(eq(notes.id, body.noteId))
+  const [note] = await db.select({ id: notes.id, title: notes.title, content: notes.content })
+    .from(notes).where(eq(notes.id, noteId))
   if (!note) return c.json({ error: 'Not found' }, 404)
+
+  const originalLength = note.content.length
 
   const summary = await chatCompletion(c.env, {
     messages: [
       {
         role: 'system',
-        content: 'Summarize the following note in 2-3 sentences. Be concise and capture the core idea.',
+        content: 'Summarize the following Zettelkasten note into a concise atomic note. Keep the core insight in 2-4 paragraphs. Preserve any wiki-links [[like this]]. Return only the summarized content.',
       },
       {
         role: 'user',
         content: `Title: ${note.title}\n\n${note.content}`,
       },
     ],
-    maxTokens: 200,
+    maxTokens: 600,
   })
 
-  return c.json({ summary })
+  const summarizedLength = summary.length
+
+  // Update the note content
+  await db.update(notes).set({
+    content: summary,
+    updatedAt: new Date().toISOString(),
+    embedStatus: 'Stale',
+  }).where(eq(notes.id, noteId))
+
+  return c.json({
+    noteId,
+    originalLength,
+    summarizedLength,
+    stillLarge: summarizedLength > 2000,
+  })
 })
 
-// POST /api/kb-health/split — suggest split points for a large note
-router.post('/split', async (c) => {
+// POST /api/kb-health/large-notes/:noteId/split-suggestions
+router.post('/large-notes/:noteId/split-suggestions', async (c) => {
   const db = c.get('db')
-  const body = await c.req.json<{ noteId: string }>()
-  if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
+  const noteId = c.req.param('noteId')
 
   const [note] = await db.select({ title: notes.title, content: notes.content })
-    .from(notes).where(eq(notes.id, body.noteId))
+    .from(notes).where(eq(notes.id, noteId))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
   const raw = await chatCompletion(c.env, {
@@ -269,7 +331,7 @@ router.post('/split', async (c) => {
       {
         role: 'system',
         content: `You are a Zettelkasten expert. Analyze this note and suggest how it could be split into
-        smaller atomic notes. Return a JSON array of objects with "title" and "contentSlice" (a brief description of what content to move there).`,
+smaller atomic notes. Return a JSON object with key "notes" containing an array of objects, each with "title" (string) and "content" (string — the full content for that atomic note).`,
       },
       {
         role: 'user',
@@ -277,15 +339,85 @@ router.post('/split', async (c) => {
       },
     ],
     responseFormat: { type: 'json_object' },
-    maxTokens: 600,
+    maxTokens: 2000,
   })
 
   try {
     const parsed = JSON.parse(raw || '{}')
-    return c.json({ suggestions: parsed.suggestions ?? parsed })
+    const suggestedNotes = parsed.notes ?? parsed.suggestions ?? []
+    return c.json({
+      noteId,
+      originalTitle: note.title,
+      notes: suggestedNotes.map((n: { title: string; content?: string; contentSlice?: string }) => ({
+        title: n.title ?? '',
+        content: n.content ?? n.contentSlice ?? '',
+      })),
+    })
   } catch {
-    return c.json({ suggestions: [] })
+    return c.json({
+      noteId,
+      originalTitle: note.title,
+      notes: [],
+    })
   }
+})
+
+// POST /api/kb-health/large-notes/:noteId/apply-split — create notes from split suggestions
+router.post('/large-notes/:noteId/apply-split', async (c) => {
+  const db = c.get('db')
+  const noteId = c.req.param('noteId')
+  const body = await c.req.json<{
+    notes: { title: string; content: string }[]
+  }>()
+
+  if (!body.notes?.length) return c.json({ error: 'notes array required' }, 400)
+
+  const [original] = await db.select({ id: notes.id }).from(notes).where(eq(notes.id, noteId))
+  if (!original) return c.json({ error: 'Original note not found' }, 404)
+
+  const createdNoteIds: string[] = []
+
+  for (const splitNote of body.notes) {
+    const id = makeId()
+    await db.insert(notes).values({
+      id,
+      title: splitNote.title,
+      content: splitNote.content,
+      createdAt: isoNow(),
+      updatedAt: isoNow(),
+      status: 'Permanent',
+      embedStatus: 'Pending',
+    })
+    createdNoteIds.push(id)
+
+    // Queue for embedding
+    try {
+      await c.env.EMBED_QUEUE?.send({ noteId: id })
+    } catch { /* queue may not be available */ }
+  }
+
+  return c.json({ createdNoteIds })
+})
+
+// ── Legacy routes (keep for backward compat) ─────────────────────────────────
+
+// GET /api/kb-health/orphans
+router.get('/orphans', async (c) => {
+  const db = c.get('db')
+
+  const rows = await db.select({
+    id: notes.id,
+    title: notes.title,
+    createdAt: notes.createdAt,
+  }).from(notes)
+    .where(and(
+      eq(notes.status, 'Permanent'),
+      sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`,
+    ))
+    .orderBy(notes.createdAt)
+    .limit(50)
+
+  return c.json(rows)
 })
 
 export default router

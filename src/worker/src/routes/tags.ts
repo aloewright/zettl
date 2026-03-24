@@ -11,7 +11,7 @@ router.get('/', async (c) => {
   const rows = await db
     .select({
       tag: noteTags.tag,
-      count: sql<number>`count(*)::int`,
+      count: sql<number>`count(*)`,
     })
     .from(noteTags)
     .groupBy(noteTags.tag)
