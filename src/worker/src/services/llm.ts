@@ -1,8 +1,17 @@
 import { eq } from 'drizzle-orm'
+import { generateText, streamText } from 'ai'
+import { createAiGateway } from 'ai-gateway-provider'
+import { createUnified } from 'ai-gateway-provider/providers/unified'
 import type { Env } from '../types'
 import { getOptionalSecret } from '../types'
 import { createDb } from '../db/client'
 import { appSettings } from '../db/schema'
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
+const GATEWAY_ID = 'x'
+const WORKERS_AI_MODEL = '@cf/moonshotai/kimi-k2.5'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,119 +52,61 @@ export async function getLLMConfig(env: Env): Promise<LLMConfig> {
     const key = await getOptionalSecret(env.OPENROUTER_API_KEY)
     if (!key) {
       console.log('[llm] No OPENROUTER_API_KEY found, falling back to Workers AI')
-      return { provider: 'workersai', model: '@cf/moonshotai/kimi-k2.5' }
+      return { provider: 'workersai', model: WORKERS_AI_MODEL }
     }
   } else if (provider === 'google') {
     const key = await getOptionalSecret(env.GOOGLE_API_KEY)
     if (!key) {
       console.log('[llm] No GOOGLE_API_KEY found, falling back to Workers AI')
-      return { provider: 'workersai', model: '@cf/moonshotai/kimi-k2.5' }
+      return { provider: 'workersai', model: WORKERS_AI_MODEL }
     }
   }
 
   return { provider, model }
 }
 
-// ── Gateway URL builders ─────────────────────────────────────────────────────
+// ── Model builders ──────────────────────────────────────────────────────────
 
-function getGatewayBase(env: Env): string | null {
-  return env.CF_AI_GATEWAY_URL?.replace(/\/$/, '') ?? null
-}
+/**
+ * Build a model that routes through the AI Gateway "text_gen" dynamic route.
+ * Uses the stored provider API key for authentication.
+ */
+async function buildModelWithApiKey(env: Env, config: LLMConfig) {
+  const apiKey = config.provider === 'openrouter'
+    ? await getOptionalSecret(env.OPENROUTER_API_KEY)
+    : config.provider === 'google'
+      ? await getOptionalSecret(env.GOOGLE_API_KEY)
+      : undefined
 
-async function buildEndpoint(env: Env, provider: LLMProvider): Promise<{ url: string; apiKey: string }> {
-  const gateway = getGatewayBase(env)
-
-  if (provider === 'google') {
-    const apiKey = await getOptionalSecret(env.GOOGLE_API_KEY) ?? ''
-    const url = gateway
-      ? `${gateway}/google-ai-studio/v1beta/openai/chat/completions`
-      : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-    return { url, apiKey }
-  }
-
-  // openrouter (default for external providers)
-  const apiKey = await getOptionalSecret(env.OPENROUTER_API_KEY) ?? ''
-  const url = gateway
-    ? `${gateway}/openrouter/chat/completions`
-    : 'https://openrouter.ai/api/v1/chat/completions'
-  return { url, apiKey }
-}
-
-/** Parse the gateway ID from CF_AI_GATEWAY_URL for use with the Workers AI binding. */
-function workersAIGatewayOpts(
-  env: Env,
-): { gateway?: { id: string } } {
-  if (!env.CF_AI_GATEWAY_URL) return {}
-  try {
-    const parsed = new URL(env.CF_AI_GATEWAY_URL.trim())
-    const segments = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean)
-    // URL format: /v1/{accountId}/{gatewayId}
-    const id = segments.length >= 3 ? segments[2] : undefined
-    return id ? { gateway: { id } } : {}
-  } catch {
-    return {}
-  }
-}
-
-// ── Workers AI chat completion ──────────────────────────────────────────────
-
-async function workersAIChatCompletion(
-  env: Env,
-  model: string,
-  opts: ChatCompletionOptions,
-): Promise<string> {
-  const gatewayOpts = workersAIGatewayOpts(env)
-
-  // Workers AI text generation expects messages in the same format
-  const result = await env.ai_binding.run(
-    model as Parameters<typeof env.ai_binding.run>[0],
-    {
-      messages: opts.messages.map(m => ({ role: m.role, content: m.content })),
-      max_tokens: opts.maxTokens ?? 2000,
-      temperature: opts.temperature ?? 0.7,
-    },
-    gatewayOpts,
-  ) as { response?: string }
-
-  return result.response ?? ''
-}
-
-async function workersAIChatCompletionStream(
-  env: Env,
-  model: string,
-  opts: ChatCompletionOptions,
-): Promise<ReadableStream> {
-  const gatewayOpts = workersAIGatewayOpts(env)
-
-  const result = await env.ai_binding.run(
-    model as Parameters<typeof env.ai_binding.run>[0],
-    {
-      messages: opts.messages.map(m => ({ role: m.role, content: m.content })),
-      max_tokens: opts.maxTokens ?? 2000,
-      temperature: opts.temperature ?? 0.7,
-      stream: true,
-    },
-    gatewayOpts,
-  )
-
-  // Workers AI returns a ReadableStream when stream: true
-  if (result instanceof ReadableStream) {
-    return result
-  }
-
-  // Fallback: wrap non-streaming response in SSE format
-  const text = typeof result === 'object' && result !== null && 'response' in result
-    ? (result as { response: string }).response
-    : String(result)
-
-  const encoder = new TextEncoder()
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`))
-      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-      controller.close()
-    },
+  const aigateway = createAiGateway({
+    accountId: ACCOUNT_ID,
+    gateway: GATEWAY_ID,
+    apiKey: apiKey ?? undefined,
   })
+
+  const unified = createUnified({
+    apiKey: apiKey ?? undefined,
+  })
+
+  return aigateway(unified(config.model))
+}
+
+/**
+ * Build a model that routes through the AI Gateway using unified billing.
+ * No provider API key needed — Cloudflare bills directly via CF_AIG_TOKEN.
+ */
+async function buildModelUnifiedBilling(env: Env, model: string) {
+  const cfToken = env.CF_AIG_TOKEN
+
+  const aigateway = createAiGateway({
+    accountId: ACCOUNT_ID,
+    gateway: GATEWAY_ID,
+    apiKey: cfToken ?? undefined,
+  })
+
+  const unified = createUnified({})
+
+  return aigateway(unified(model))
 }
 
 // ── Chat completion (non-streaming) ──────────────────────────────────────────
@@ -166,53 +117,36 @@ export async function chatCompletion(
   configOverride?: LLMConfig,
 ): Promise<string> {
   const config = configOverride ?? await getLLMConfig(env)
-
-  // Use Workers AI directly (no external API key needed)
-  if (config.provider === 'workersai') {
-    return workersAIChatCompletion(env, config.model, opts)
-  }
-
-  const { url, apiKey } = await buildEndpoint(env, config.provider)
-
-  if (!apiKey) {
-    console.warn(`[llm] No API key for ${config.provider}, falling back to Workers AI`)
-    return workersAIChatCompletion(env, '@cf/moonshotai/kimi-k2.5', opts)
-  }
-
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: opts.messages,
-    max_tokens: opts.maxTokens ?? 2000,
+  const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
+  const settings = {
+    maxOutputTokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
   }
-  if (opts.responseFormat) {
-    body.response_format = opts.responseFormat
+
+  // 1. Try with stored API key via text_gen route
+  try {
+    const model = await buildModelWithApiKey(env, config)
+    const { text } = await generateText({ model, messages, ...settings })
+    return text
+  } catch (err) {
+    console.warn(`[llm] ${config.provider}/${config.model} with API key failed: ${err instanceof Error ? err.message : err}`)
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '')
-    // If external provider fails, try Workers AI as last resort
-    console.warn(`[llm] ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}. Falling back to Workers AI.`)
-    try {
-      return await workersAIChatCompletion(env, '@cf/moonshotai/kimi-k2.5', opts)
-    } catch (fallbackErr) {
-      throw new Error(`LLM ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}`)
-    }
+  // 2. Fallback: unified billing (no provider API key needed)
+  try {
+    console.log(`[llm] Falling back to unified billing for ${config.model}`)
+    const model = await buildModelUnifiedBilling(env, config.model)
+    const { text } = await generateText({ model, messages, ...settings })
+    return text
+  } catch (err) {
+    console.warn(`[llm] Unified billing for ${config.model} also failed: ${err instanceof Error ? err.message : err}`)
   }
 
-  const data = await res.json() as {
-    choices?: { message?: { content?: string } }[]
-  }
-  return data.choices?.[0]?.message?.content ?? ''
+  // 3. Last resort: Workers AI (always available, no API key needed)
+  console.log(`[llm] Falling back to Workers AI ${WORKERS_AI_MODEL}`)
+  const model = await buildModelUnifiedBilling(env, WORKERS_AI_MODEL)
+  const { text } = await generateText({ model, messages, ...settings })
+  return text
 }
 
 // ── Chat completion (SSE streaming) ──────────────────────────────────────────
@@ -223,45 +157,34 @@ export async function chatCompletionStream(
   configOverride?: LLMConfig,
 ): Promise<ReadableStream> {
   const config = configOverride ?? await getLLMConfig(env)
-
-  // Use Workers AI directly
-  if (config.provider === 'workersai') {
-    return workersAIChatCompletionStream(env, config.model, opts)
-  }
-
-  const { url, apiKey } = await buildEndpoint(env, config.provider)
-
-  if (!apiKey) {
-    console.warn(`[llm] No API key for ${config.provider}, falling back to Workers AI stream`)
-    return workersAIChatCompletionStream(env, '@cf/moonshotai/kimi-k2.5', opts)
-  }
-
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: opts.messages,
-    max_tokens: opts.maxTokens ?? 2000,
+  const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
+  const settings = {
+    maxOutputTokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
-    stream: true,
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '')
-    console.warn(`[llm] Stream ${config.provider}/${config.model} returned ${res.status}. Falling back to Workers AI.`)
-    try {
-      return await workersAIChatCompletionStream(env, '@cf/moonshotai/kimi-k2.5', opts)
-    } catch {
-      throw new Error(`LLM stream ${config.provider}/${config.model} returned ${res.status}: ${errBody.slice(0, 200)}`)
-    }
+  // 1. Try with stored API key via text_gen route
+  try {
+    const model = await buildModelWithApiKey(env, config)
+    const result = streamText({ model, messages, ...settings })
+    return result.textStream as unknown as ReadableStream
+  } catch (err) {
+    console.warn(`[llm] Stream ${config.provider}/${config.model} with API key failed: ${err instanceof Error ? err.message : err}`)
   }
 
-  return res.body!
+  // 2. Fallback: unified billing
+  try {
+    console.log(`[llm] Stream falling back to unified billing for ${config.model}`)
+    const model = await buildModelUnifiedBilling(env, config.model)
+    const result = streamText({ model, messages, ...settings })
+    return result.textStream as unknown as ReadableStream
+  } catch (err) {
+    console.warn(`[llm] Stream unified billing for ${config.model} also failed: ${err instanceof Error ? err.message : err}`)
+  }
+
+  // 3. Last resort: Workers AI
+  console.log(`[llm] Stream falling back to Workers AI ${WORKERS_AI_MODEL}`)
+  const model = await buildModelUnifiedBilling(env, WORKERS_AI_MODEL)
+  const result = streamText({ model, messages, ...settings })
+  return result.textStream as unknown as ReadableStream
 }
