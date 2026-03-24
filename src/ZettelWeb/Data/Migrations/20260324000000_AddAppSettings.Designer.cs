@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ZettelWeb.Data;
@@ -11,13 +12,11 @@ using ZettelWeb.Data;
 namespace ZettelWeb.Data.Migrations
 {
     [DbContext(typeof(ZettelDbContext))]
-    partial class ZettelDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260324000000_AddAppSettings")]
+    partial class AddAppSettings
     {
-        /// <summary>
-        /// Configures the Entity Framework Core model used for migrations, defining annotations, PostgreSQL extensions, identity column strategy, entities, properties, keys, indexes, relationships, and navigation mappings.
-        /// </summary>
-        /// <param name="modelBuilder">The ModelBuilder used to build the EF Core model for the context.</param>
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

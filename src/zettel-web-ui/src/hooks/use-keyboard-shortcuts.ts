@@ -4,8 +4,26 @@ import { useNavigate, useLocation } from 'react-router'
 interface ShortcutHandlers {
   onSave?: () => void
   onShowShortcuts?: () => void
+  onOpenSettings?: () => void
 }
 
+/**
+ * Registers global keyboard shortcuts that trigger navigation or provided callbacks.
+ *
+ * Registers a document-level keydown listener that invokes handlers or navigates based on specific key combinations and the current route/typing context.
+ *
+ * Supported shortcuts:
+ * - Cmd/Ctrl + L: calls `handlers.onOpenSettings` (prevents default)
+ * - Cmd/Ctrl + N: navigates to `/new` (prevents default)
+ * - Cmd/Ctrl + S: calls `handlers.onSave` (prevents default)
+ * - `?` (when not typing and no modifier): calls `handlers.onShowShortcuts`
+ * - Escape (when not Shift or modifier): navigates to `/` unless a dialog is open, the current path is `/`, or the path is an editor (`/edit` or `/new`)
+ *
+ * @param handlers - Optional callbacks invoked by corresponding shortcuts:
+ *   - `onOpenSettings` — invoked for Cmd/Ctrl + L
+ *   - `onSave` — invoked for Cmd/Ctrl + S
+ *   - `onShowShortcuts` — invoked for `?`
+ */
 export function useKeyboardShortcuts(handlers?: ShortcutHandlers) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -18,6 +36,13 @@ export function useKeyboardShortcuts(handlers?: ShortcutHandlers) {
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable
+
+      // Cmd+L -> settings
+      if (isMod && e.key === 'l') {
+        e.preventDefault()
+        handlers?.onOpenSettings?.()
+        return
+      }
 
       // Cmd+N -> new note
       if (isMod && e.key === 'n') {

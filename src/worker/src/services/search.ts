@@ -1,7 +1,6 @@
 import type { Db } from '../db/client'
-import type { SearchResult, SearchWeights } from '../types'
-import { generateEmbedding } from './embeddings'
-import type OpenAI from 'openai'
+import type { Env, SearchResult, SearchWeights } from '../types'
+import { generateEmbeddingAI } from './embeddings'
 
 /**
  * Full-text search using FTS5.
@@ -33,17 +32,26 @@ export async function fullTextSearch(
 }
 
 /**
- * Semantic search using Cloudflare Vectorize.
+ * Finds notes semantically similar to `query` using the Vectorize index and returns matched note metadata.
+ *
+ * Generates an embedding for `query`, retrieves up to `limit` vector matches, filters out matches with
+ * similarity below `weights.minimumSimilarity`, then fetches and returns each matched note's id, title,
+ * snippet (first 200 characters with "..." if truncated), and `rank` set to the match similarity score.
+ *
+ * @param query - The text query to search for
+ * @param weights - Search weights and thresholds; `minimumSimilarity` is used to filter vector matches
+ * @param limit - Maximum number of vector matches to request and return
+ * @returns An array of search results containing `noteId`, `title`, `snippet`, and `rank` (similarity score) for each matched note meeting the similarity threshold, up to `limit`
  */
 export async function semanticSearch(
   vectorize: VectorizeIndex,
   db: Db,
-  openai: OpenAI,
+  env: Env,
   query: string,
   weights: SearchWeights,
   limit = 20,
 ): Promise<SearchResult[]> {
-  const embedding = await generateEmbedding(openai, query)
+  const embedding = await generateEmbeddingAI(env, query)
 
   const vecResults = await vectorize.query(embedding, {
     topK: limit,
@@ -86,18 +94,25 @@ export async function semanticSearch(
 }
 
 /**
- * Hybrid search combining FTS5 + Vectorize results.
+ * Combine full-text and semantic vector search results into a single ranked list.
+ *
+ * Uses normalized FTS5 ranks and vector similarity scores, applies the provided
+ * fullTextWeight and semanticWeight, filters out entries below weights.minimumHybridScore,
+ * and scales final ranks to the range [0, 1]. If the semantic search fails, returns
+ * results based on FTS5 only.
+ *
+ * @returns Search results ranked by the combined weighted score; each result's `rank` is scaled to [0, 1]
  */
 export async function hybridSearch(
   vectorize: VectorizeIndex,
   db: Db,
-  openai: OpenAI,
+  env: Env,
   query: string,
   weights: SearchWeights,
 ): Promise<SearchResult[]> {
   const [ftResults, semResults] = await Promise.all([
     fullTextSearch(db, query),
-    semanticSearch(vectorize, db, openai, query, weights).catch(() => [] as SearchResult[]),
+    semanticSearch(vectorize, db, env, query, weights).catch(() => [] as SearchResult[]),
   ])
 
   const normalized = normalizeRanks(ftResults)

@@ -46,8 +46,8 @@ router.post('/email', async (c) => {
     source: 'Email',
     sourceAuthor: body.from ?? null,
     sourceUrl: body.url ?? null,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
     embedStatus: 'Pending',
   })
 
@@ -87,8 +87,8 @@ router.post('/telegram', async (c) => {
     noteType: 'Regular',
     source: 'Telegram',
     sourceUrl: body.url ?? null,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
     embedStatus: 'Pending',
   })
 

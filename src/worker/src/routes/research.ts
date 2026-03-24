@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { eq, desc, and } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
-import { makeId } from '../types'
+import { makeId, isoNow } from '../types'
 import { researchAgendas, researchTasks, researchFindings, notes } from '../db/schema'
 
 const router = new Hono<HonoEnv>()
@@ -53,6 +53,7 @@ router.post('/agendas', async (c) => {
     id: agendaId,
     triggeredFromNoteId: body.triggeredFromNoteId ?? null,
     status: 'Pending',
+    createdAt: isoNow(),
   })
 
   await db.insert(researchTasks).values(body.tasks.map(t => ({
@@ -83,7 +84,7 @@ router.post('/agendas/:id/approve', async (c) => {
 
   await db.update(researchAgendas).set({
     status: 'Approved',
-    approvedAt: new Date(),
+    approvedAt: isoNow(),
   }).where(eq(researchAgendas.id, id))
 
   const [updated] = await db.select().from(researchAgendas)
@@ -115,7 +116,7 @@ router.put('/tasks/:id', async (c) => {
   await db.update(researchTasks).set({
     status: body.status ?? existing.status,
     blockedAt: body.blockedAt !== undefined
-      ? (body.blockedAt ? new Date(body.blockedAt) : null)
+      ? (body.blockedAt ?? null)
       : existing.blockedAt,
   }).where(eq(researchTasks.id, id))
 
@@ -181,6 +182,7 @@ router.post('/findings', async (c) => {
     similarNoteIds: JSON.stringify(body.similarNoteIds ?? []),
     duplicateSimilarity: body.duplicateSimilarity ?? null,
     status: 'Pending',
+    createdAt: isoNow(),
   })
 
   const [created] = await db.select().from(researchFindings)
@@ -200,6 +202,7 @@ router.post('/findings/:id/accept', async (c) => {
   const noteId = makeId()
   const now = new Date()
 
+  const nowIso = now.toISOString()
   await db.insert(notes).values({
     id: noteId,
     title: finding.title,
@@ -209,15 +212,15 @@ router.post('/findings/:id/accept', async (c) => {
     source: 'Research',
     sourceUrl: finding.sourceUrl,
     sourceType: finding.sourceType,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: nowIso,
+    updatedAt: nowIso,
     embedStatus: 'Pending',
   })
 
   await db.update(researchFindings).set({
     status: 'Accepted',
     acceptedFleetingNoteId: noteId,
-    reviewedAt: now,
+    reviewedAt: nowIso,
   }).where(eq(researchFindings.id, id))
 
   const [updated] = await db.select().from(researchFindings)
@@ -235,7 +238,7 @@ router.post('/findings/:id/reject', async (c) => {
 
   await db.update(researchFindings).set({
     status: 'Rejected',
-    reviewedAt: new Date(),
+    reviewedAt: isoNow(),
   }).where(eq(researchFindings.id, id))
 
   const [updated] = await db.select().from(researchFindings)

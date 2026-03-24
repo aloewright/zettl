@@ -35,7 +35,7 @@ router.post('/examples', async (c) => {
   }
 
   const id = makeId()
-  await db.insert(voiceExamples).values({ id, medium: body.medium, content: body.content })
+  await db.insert(voiceExamples).values({ id, medium: body.medium, content: body.content, createdAt: new Date().toISOString() })
   const [created] = await db.select().from(voiceExamples).where(eq(voiceExamples.id, id))
   return c.json(created, 201)
 })
@@ -85,6 +85,7 @@ router.post('/configs', async (c) => {
     medium: body.medium,
     toneDescription: body.toneDescription ?? null,
     audienceDescription: body.audienceDescription ?? null,
+    updatedAt: new Date().toISOString(),
   })
 
   const [created] = await db.select().from(voiceConfigs).where(eq(voiceConfigs.id, id))
@@ -105,7 +106,7 @@ router.put('/configs/:id', async (c) => {
   await db.update(voiceConfigs).set({
     toneDescription: body.toneDescription !== undefined ? body.toneDescription : existing.toneDescription,
     audienceDescription: body.audienceDescription !== undefined ? body.audienceDescription : existing.audienceDescription,
-    updatedAt: new Date(),
+    updatedAt: new Date().toISOString(),
   }).where(eq(voiceConfigs.id, id))
 
   const [updated] = await db.select().from(voiceConfigs).where(eq(voiceConfigs.id, id))

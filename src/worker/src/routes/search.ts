@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types'
 import { DEFAULT_WEIGHTS } from '../types'
-import { buildOpenAI } from '../services/embeddings'
 import { fullTextSearch, semanticSearch, hybridSearch } from '../services/search'
 
 const router = new Hono<HonoEnv>()
@@ -25,15 +24,13 @@ router.get('/', async (c) => {
     return c.json(results)
   }
 
-  const openai = await buildOpenAI(c.env)
-
   if (mode === 'semantic') {
-    const results = await semanticSearch(c.env.vector_db, db, openai, q, weights)
+    const results = await semanticSearch(c.env.vector_db, db, c.env, q, weights)
     return c.json(results)
   }
 
   // hybrid (default)
-  const results = await hybridSearch(c.env.vector_db, db, openai, q, weights)
+  const results = await hybridSearch(c.env.vector_db, db, c.env, q, weights)
   return c.json(results)
 })
 

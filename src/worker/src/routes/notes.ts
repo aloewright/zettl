@@ -4,7 +4,7 @@ import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
 import { notes, noteTags, noteVersions } from '../db/schema'
 import { hybridSearch, fullTextSearch, findRelated } from '../services/search'
-import { buildOpenAI, generateEmbedding } from '../services/embeddings'
+import { generateEmbeddingAI } from '../services/embeddings'
 
 const router = new Hono<HonoEnv>()
 
@@ -110,12 +110,11 @@ router.get('/search-titles', async (c) => {
 })
 
 router.post('/check-duplicate', async (c) => {
-  const openai = await buildOpenAI(c.env)
   const body = await c.req.json<{ content: string; minimumSimilarity?: number }>()
   if (!body.content) return c.json({ error: 'content required' }, 400)
 
   const minSim = body.minimumSimilarity ?? 0.92
-  const embedding = await generateEmbedding(openai, body.content)
+  const embedding = await generateEmbeddingAI(c.env, body.content)
 
   const vecResults = await c.env.vector_db.query(embedding, {
     topK: 5,

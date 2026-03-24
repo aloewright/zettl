@@ -9,7 +9,6 @@ import {
   notes,
   noteTags,
 } from '../db/schema'
-import { buildOpenAI } from '../services/embeddings'
 import { isoNow } from '../types'
 
 const router = new Hono<HonoEnv>()
@@ -95,7 +94,7 @@ router.put('/generations/:id', async (c) => {
 
   await db.update(contentGenerations).set({
     status: body.status ?? existing.status,
-    reviewedAt: body.reviewedAt ? new Date(body.reviewedAt) : existing.reviewedAt,
+    reviewedAt: body.reviewedAt ?? existing.reviewedAt,
   }).where(eq(contentGenerations.id, id))
 
   const [updated] = await db.select().from(contentGenerations)
@@ -172,6 +171,7 @@ router.post('/pieces', async (c) => {
     description: body.description ?? null,
     generatedTags: JSON.stringify(body.generatedTags ?? []),
     status: 'Draft',
+    createdAt: isoNow(),
   })
 
   const [created] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
@@ -199,7 +199,7 @@ router.put('/pieces/:id', async (c) => {
       ? JSON.stringify(body.generatedTags)
       : existing.generatedTags,
     status: body.status ?? existing.status,
-    reviewedAt: body.reviewedAt ? new Date(body.reviewedAt) : existing.reviewedAt,
+    reviewedAt: body.reviewedAt ?? existing.reviewedAt,
   }).where(eq(contentPieces.id, id))
 
   const [updated] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
@@ -227,7 +227,7 @@ router.post('/pieces/:id/publish', async (c) => {
 
   await db.update(contentPieces).set({
     status: 'Published',
-    reviewedAt: new Date(),
+    reviewedAt: isoNow(),
   }).where(eq(contentPieces.id, id))
 
   const [updated] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))

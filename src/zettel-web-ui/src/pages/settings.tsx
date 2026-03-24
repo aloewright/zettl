@@ -1,17 +1,57 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, Upload, Download, RefreshCw, Activity } from 'lucide-react'
+import { ArrowLeft, Upload, Download, RefreshCw, Activity, Bot, Loader2, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useReEmbed } from '@/hooks/use-notes'
 import { useHealth } from '@/hooks/use-health'
+import { useModelSettings, useAvailableModels, useUpdateModel } from '@/hooks/use-settings'
 import { importNotes, exportNotes } from '@/api/import-export'
+import { logout } from '@/auth'
 import { toast } from 'sonner'
 
+/**
+ * Render the Settings page UI for configuring models, importing/exporting notes, re-embedding, viewing health, and account actions.
+ *
+ * The page provides controls to select and save an LLM provider and model, import markdown files as notes (with optional embedding progress), download a notes export, queue notes for re-embedding, and view service/database health metrics. It also exposes a sign-out action.
+ *
+ * @returns The JSX element for the Settings page
+ */
 export function SettingsPage() {
   const reEmbed = useReEmbed()
   const [showEmbedProgress, setShowEmbedProgress] = useState(false)
+
+  // LLM model selection
+  const { data: modelSettings } = useModelSettings()
+  const { data: availableModels, isLoading: isLoadingModels } = useAvailableModels()
+  const updateModel = useUpdateModel()
+  const [selectedProvider, setSelectedProvider] = useState<'openrouter' | 'google'>('openrouter')
+  const [selectedModel, setSelectedModel] = useState('')
+
+  // Sync local state from server when loaded
+  useEffect(() => {
+    if (modelSettings) {
+      setSelectedProvider(modelSettings.provider)
+      setSelectedModel(modelSettings.model)
+    }
+  }, [modelSettings])
+
+  const providerModels =
+    selectedProvider === 'google'
+      ? (availableModels?.google ?? [])
+      : (availableModels?.openRouter ?? [])
+
+  const handleSaveModel = () => {
+    if (!selectedModel) return
+    updateModel.mutate(
+      { provider: selectedProvider, model: selectedModel },
+      {
+        onSuccess: () => toast.success('Model updated'),
+        onError: () => toast.error('Failed to update model'),
+      },
+    )
+  }
   const { data: health } = useHealth(showEmbedProgress ? 5_000 : 30_000)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
@@ -92,6 +132,83 @@ export function SettingsPage() {
       </div>
 
       <h1 className="font-serif text-2xl font-semibold tracking-tight">Settings</h1>
+
+      <Separator className="my-6" />
+
+      {/* LLM Model */}
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-1.5 text-sm font-medium">
+          <Bot className="h-3.5 w-3.5" />
+          Generation Model
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Choose which AI model is used for content and research generation.
+        </p>
+
+        {/* Provider tabs */}
+        <div className="flex gap-1 rounded-md border border-border bg-muted p-0.5 w-fit">
+          {(['openrouter', 'google'] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => {
+                setSelectedProvider(p)
+                setSelectedModel('')
+              }}
+              className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                selectedProvider === p
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {p === 'openrouter' ? 'OpenRouter' : 'Google'}
+            </button>
+          ))}
+        </div>
+
+        {/* Model dropdown */}
+        <div className="flex items-center gap-2">
+          {isLoadingModels ? (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading models…
+            </div>
+          ) : (
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={providerModels.length === 0}
+              className="h-8 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="" disabled>
+                {providerModels.length === 0
+                  ? `No ${selectedProvider === 'google' ? 'Google' : 'OpenRouter'} models — check API key`
+                  : 'Select a model…'}
+              </option>
+              {providerModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                  {m.contextLength ? ` (${(m.contextLength / 1000).toFixed(0)}k ctx)` : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSaveModel}
+            disabled={!selectedModel || updateModel.isPending}
+            className="gap-1.5"
+          >
+            {updateModel.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+
+        {modelSettings?.model && (
+          <p className="text-xs text-muted-foreground">
+            Active: <span className="font-mono text-foreground">{modelSettings.provider}/{modelSettings.model}</span>
+          </p>
+        )}
+      </section>
 
       <Separator className="my-6" />
 
@@ -226,6 +343,22 @@ export function SettingsPage() {
         ) : (
           <p className="text-sm text-muted-foreground">Loading health data...</p>
         )}
+      </section>
+
+      <Separator className="my-6" />
+
+      {/* Account */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Account</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={logout}
+          className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Sign out
+        </Button>
       </section>
     </div>
   )
