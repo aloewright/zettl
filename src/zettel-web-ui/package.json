@@ -30,7 +30,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
-    "dompurify": "^3.3.1",
+    "dompurify": "^3.3.2",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.564.0",
     "radix-ui": "^1.4.3",
