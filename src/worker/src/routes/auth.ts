@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import type { HonoEnv } from '../types'
+import { loginPage } from '../pages/login'
+import { blockPage } from '../pages/block'
 
 const CF_ACCESS_TEAM = 'worthy'
 const CF_ACCESS_CERTS_URL = `https://${CF_ACCESS_TEAM}.cloudflareaccess.com/cdn-cgi/access/certs`
@@ -40,6 +42,17 @@ router.get('/me', async (c) => {
 // GET /api/auth/logout — redirect to CF Access logout URL
 router.get('/logout', (c) => {
   return c.redirect(`https://${CF_ACCESS_TEAM}.cloudflareaccess.com/cdn-cgi/access/logout`)
+})
+
+// GET /api/auth/login — custom login page matching app theme
+router.get('/login', (c) => {
+  const callbackUrl = c.req.query('redirect') ?? new URL(c.req.url).origin
+  return c.html(loginPage(CF_ACCESS_TEAM, callbackUrl))
+})
+
+// GET /api/auth/block — custom access-denied page matching app theme
+router.get('/block', (c) => {
+  return c.html(blockPage(CF_ACCESS_TEAM))
 })
 
 /** Extract a cookie value from a raw Request. */
