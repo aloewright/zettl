@@ -21,8 +21,9 @@ public class ZettelDbContext : DbContext
     public DbSet<ResearchAgenda> ResearchAgendas => Set<ResearchAgenda>();
     public DbSet<ResearchTask> ResearchTasks => Set<ResearchTask>();
     public DbSet<ResearchFinding> ResearchFindings => Set<ResearchFinding>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    protected override void OnModelCreating
     {
         modelBuilder.HasPostgresExtension("vector");
 
@@ -210,6 +211,13 @@ public class ZettelDbContext : DbContext
             entity.HasIndex(e => e.TaskId);
             // I9: composite index covers WHERE Status = 'Pending' ORDER BY CreatedAt DESC
             entity.HasIndex(e => new { e.Status, e.CreatedAt });
+        });
+
+        modelBuilder.Entity<AppSetting>(entity =>
+        {
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Value).IsRequired();
         });
     }
 }

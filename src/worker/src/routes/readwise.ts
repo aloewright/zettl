@@ -59,7 +59,7 @@ router.post('/push', async (c) => {
     category: 'articles' as const,
     // Tags become inline Readwise tags via the note field: .tag1 .tag2
     note: (tagMap[note.id] ?? []).map(t => `.${t}`).join(' ') || undefined,
-    highlighted_at: note.createdAt.toISOString(),
+    highlighted_at: note.createdAt,
     // Stable URL — used for idempotent upserts
     highlight_url: `https://postpilot.cc/notes/${note.id}`,
     ...(note.sourceAuthor ? { author: note.sourceAuthor.slice(0, 1024) } : {}),
@@ -112,10 +112,8 @@ router.post('/pull', async (c) => {
         sourceAuthor: book.author ?? null,
         sourceUrl: highlight.readwise_url,
         sourceType: book.category ?? null,
-        createdAt: highlight.highlighted_at
-          ? new Date(highlight.highlighted_at)
-          : new Date(),
-        updatedAt: new Date(),
+        createdAt: highlight.highlighted_at ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         embedStatus: 'Pending',
       })
 

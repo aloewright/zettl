@@ -17,6 +17,7 @@ const mod = isMac ? '\u2318' : 'Ctrl'
 const shortcuts = [
   { keys: `${mod}+K`, description: 'Search notes' },
   { keys: `${mod}+N`, description: 'New note' },
+  { keys: `${mod}+L`, description: 'Settings' },
   { keys: `${mod}+S`, description: 'Save note (in editor)' },
   { keys: `${mod}+Shift+N`, description: 'Quick capture' },
   { keys: 'Escape', description: 'Go back to home' },

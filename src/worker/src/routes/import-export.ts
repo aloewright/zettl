@@ -73,7 +73,7 @@ function parseReadwiseFile(fileName: string, content: string): ParsedNote {
   let inMetadata = false
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i].replace(/\r$/, '')
+    const raw = (lines[i] ?? '').replace(/\r$/, '')
     const t = raw.trim()
 
     if (t.startsWith('# ') && i === 0) {
@@ -132,7 +132,7 @@ function parseMarkdownFile(fileName: string, content: string): ParsedNote {
     let bodyStart = lines.length
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].replace(/\r$/, '')
+      const line = (lines[i] ?? '').replace(/\r$/, '')
       const trimmed = line.trim()
 
       if (!title && trimmed.startsWith('# ')) {

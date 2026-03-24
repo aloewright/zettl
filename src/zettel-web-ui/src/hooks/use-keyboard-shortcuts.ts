@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router'
 interface ShortcutHandlers {
   onSave?: () => void
   onShowShortcuts?: () => void
+  onOpenSettings?: () => void
 }
 
 export function useKeyboardShortcuts(handlers?: ShortcutHandlers) {
@@ -18,6 +19,13 @@ export function useKeyboardShortcuts(handlers?: ShortcutHandlers) {
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
         target.isContentEditable
+
+      // Cmd+L -> settings
+      if (isMod && e.key === 'l') {
+        e.preventDefault()
+        handlers?.onOpenSettings?.()
+        return
+      }
 
       // Cmd+N -> new note
       if (isMod && e.key === 'n') {

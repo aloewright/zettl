@@ -3,7 +3,7 @@ import type { EmbedQueueMessage, Env } from '../types'
 import { isoNow } from '../types'
 import { createDb } from '../db/client'
 import { notes } from '../db/schema'
-import { buildOpenAI, generateEmbedding } from '../services/embeddings'
+import { generateEmbeddingAI } from '../services/embeddings'
 
 export async function handleEmbedMessage(
   message: Message<EmbedQueueMessage>,
@@ -25,9 +25,8 @@ export async function handleEmbedMessage(
 
     if (!note) return // Note was deleted; just ack
 
-    const openai = await buildOpenAI(env)
     const text = `${note.title}\n\n${note.content}`
-    const embedding = await generateEmbedding(openai, text)
+    const embedding = await generateEmbeddingAI(env, text)
 
     // Upsert embedding into Vectorize
     await env.vector_db.upsert([{

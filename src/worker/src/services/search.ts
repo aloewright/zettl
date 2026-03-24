@@ -1,7 +1,6 @@
 import type { Db } from '../db/client'
-import type { SearchResult, SearchWeights } from '../types'
-import { generateEmbedding } from './embeddings'
-import type OpenAI from 'openai'
+import type { Env, SearchResult, SearchWeights } from '../types'
+import { generateEmbeddingAI } from './embeddings'
 
 /**
  * Full-text search using FTS5.
@@ -38,12 +37,12 @@ export async function fullTextSearch(
 export async function semanticSearch(
   vectorize: VectorizeIndex,
   db: Db,
-  openai: OpenAI,
+  env: Env,
   query: string,
   weights: SearchWeights,
   limit = 20,
 ): Promise<SearchResult[]> {
-  const embedding = await generateEmbedding(openai, query)
+  const embedding = await generateEmbeddingAI(env, query)
 
   const vecResults = await vectorize.query(embedding, {
     topK: limit,
@@ -91,13 +90,13 @@ export async function semanticSearch(
 export async function hybridSearch(
   vectorize: VectorizeIndex,
   db: Db,
-  openai: OpenAI,
+  env: Env,
   query: string,
   weights: SearchWeights,
 ): Promise<SearchResult[]> {
   const [ftResults, semResults] = await Promise.all([
     fullTextSearch(db, query),
-    semanticSearch(vectorize, db, openai, query, weights).catch(() => [] as SearchResult[]),
+    semanticSearch(vectorize, db, env, query, weights).catch(() => [] as SearchResult[]),
   ])
 
   const normalized = normalizeRanks(ftResults)

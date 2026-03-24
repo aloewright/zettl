@@ -173,11 +173,21 @@ builder.Services.AddHostedService<EnrichmentBackgroundService>();
 builder.Services.Configure<ContentGenerationOptions>(
     builder.Configuration.GetSection(ContentGenerationOptions.SectionName));
 
-var cgModel = builder.Configuration["ContentGeneration:Model"] ?? "gpt-4o";
-var cgApiKey = builder.Configuration["ContentGeneration:ApiKey"] ?? "";
-builder.Services.AddSingleton<IChatClient>(
-    new OpenAIClient(new ApiKeyCredential(cgApiKey), BuildOpenAiOptions()).GetChatClient(cgModel).AsIChatClient());
+// AppSettingsCache holds the live model preference; updated at runtime via /api/settings/model.
+var appSettingsCache = new ZettelWeb.Services.AppSettingsCache();
+builder.Services.AddSingleton(appSettingsCache);
 
+// DynamicChatClient reads from AppSettingsCache on every call so model changes take
+// effect immediately without a restart. Falls back to ContentGeneration:* appsettings.
+var cgDefaultProvider = builder.Configuration["ContentGeneration:Provider"] ?? "openrouter";
+var cgDefaultModel    = builder.Configuration["ContentGeneration:Model"] ?? "";
+var openRouterApiKey  = builder.Configuration["OpenRouter:ApiKey"] ?? "";
+var googleApiKey      = builder.Configuration["Google:ApiKey"] ?? "";
+builder.Services.AddSingleton<IChatClient>(new ZettelWeb.Services.DynamicChatClient(
+    appSettingsCache, aiGatewayUrl ?? "", openRouterApiKey, googleApiKey,
+    cgDefaultProvider, cgDefaultModel));
+
+builder.Services.AddHttpClient("Models", c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<IContentGenerationService, ContentGenerationService>();
 
 // ── Publishing services ────────────────────────────────────
@@ -286,6 +296,10 @@ using (var scope = app.Services.CreateScope())
             $"WHERE \"Embedding\" IS NOT NULL;");
 #pragma warning restore EF1003
     }
+
+    // Populate the in-memory AppSettingsCache from the database.
+    var storedSettings = db.AppSettings.ToList();
+    appSettingsCache.Load(storedSettings);
 }
 
 var publishingOpts = app.Services.GetRequiredService<IOptions<PublishingOptions>>().Value;

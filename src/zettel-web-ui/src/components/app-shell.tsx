@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Outlet } from 'react-router'
+import { Outlet, useNavigate } from 'react-router'
 import { Header } from './header'
 import { CommandMenu } from './command-menu'
 import { CaptureButton } from './capture-button'
@@ -9,6 +9,7 @@ import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { toast } from 'sonner'
 
 export function AppShell() {
+  const navigate = useNavigate()
   const { open, setOpen } = useCommandMenu()
   const [initialQuery, setInitialQuery] = useState('')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -63,8 +64,9 @@ export function AppShell() {
   const shortcutHandlers = useMemo(
     () => ({
       onShowShortcuts: () => setShortcutsOpen(true),
+      onOpenSettings: () => navigate('/settings'),
     }),
-    [],
+    [navigate],
   )
   useKeyboardShortcuts(shortcutHandlers)
 
