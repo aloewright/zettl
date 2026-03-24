@@ -2,6 +2,9 @@ name = "zettl"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+
+[vars]
+CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x"
 [observability]
 enabled = true
 

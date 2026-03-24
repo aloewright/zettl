@@ -10,7 +10,7 @@ export interface Env {
   // Cloudflare Secrets Store bindings — access via await env.X.get()
   OPENROUTER_API_KEY?: SecretsStoreSecret
   GOOGLE_API_KEY?: SecretsStoreSecret
-  CF_AI_GATEWAY_URL?: SecretsStoreSecret // optional binding
+  CF_AI_GATEWAY_URL?: string // plain env var (not sensitive)
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding

@@ -58,13 +58,12 @@ export async function getLLMConfig(env: Env): Promise<LLMConfig> {
 
 // ── Gateway URL builders ─────────────────────────────────────────────────────
 
-async function getGatewayBase(env: Env): Promise<string | null> {
-  const url = await getOptionalSecret(env.CF_AI_GATEWAY_URL)
-  return url?.replace(/\/$/, '') ?? null
+function getGatewayBase(env: Env): string | null {
+  return env.CF_AI_GATEWAY_URL?.replace(/\/$/, '') ?? null
 }
 
 async function buildEndpoint(env: Env, provider: LLMProvider): Promise<{ url: string; apiKey: string }> {
-  const gateway = await getGatewayBase(env)
+  const gateway = getGatewayBase(env)
 
   if (provider === 'google') {
     const apiKey = await getOptionalSecret(env.GOOGLE_API_KEY) ?? ''
@@ -83,14 +82,14 @@ async function buildEndpoint(env: Env, provider: LLMProvider): Promise<{ url: st
 }
 
 /** Parse the gateway ID from CF_AI_GATEWAY_URL for use with the Workers AI binding. */
-async function workersAIGatewayOpts(
+function workersAIGatewayOpts(
   env: Env,
-): Promise<{ gateway?: { id: string } }> {
+): { gateway?: { id: string } } {
   if (!env.CF_AI_GATEWAY_URL) return {}
   try {
-    const raw = await env.CF_AI_GATEWAY_URL.get()
-    const parsed = new URL(raw.trim())
+    const parsed = new URL(env.CF_AI_GATEWAY_URL.trim())
     const segments = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean)
+    // URL format: /v1/{accountId}/{gatewayId}
     const id = segments.length >= 3 ? segments[2] : undefined
     return id ? { gateway: { id } } : {}
   } catch {
@@ -105,7 +104,7 @@ async function workersAIChatCompletion(
   model: string,
   opts: ChatCompletionOptions,
 ): Promise<string> {
-  const gatewayOpts = await workersAIGatewayOpts(env)
+  const gatewayOpts = workersAIGatewayOpts(env)
 
   // Workers AI text generation expects messages in the same format
   const result = await env.ai_binding.run(
@@ -126,7 +125,7 @@ async function workersAIChatCompletionStream(
   model: string,
   opts: ChatCompletionOptions,
 ): Promise<ReadableStream> {
-  const gatewayOpts = await workersAIGatewayOpts(env)
+  const gatewayOpts = workersAIGatewayOpts(env)
 
   const result = await env.ai_binding.run(
     model as Parameters<typeof env.ai_binding.run>[0],

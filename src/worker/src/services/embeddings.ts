@@ -11,7 +11,7 @@ export async function generateEmbeddingAI(
   env: Env,
   text: string,
 ): Promise<number[]> {
-  const opts = await workersAIGatewayOpts(env)
+  const opts = workersAIGatewayOpts(env)
   const result = await env.ai_binding.run(
     '@cf/baai/bge-large-en-v1.5',
     { text: [text] },
@@ -25,14 +25,13 @@ export async function generateEmbeddingAI(
 }
 
 /** Parse the gateway ID from CF_AI_GATEWAY_URL for use with the Workers AI binding. */
-async function workersAIGatewayOpts(
+function workersAIGatewayOpts(
   env: Env,
-): Promise<{ gateway?: { id: string } }> {
+): { gateway?: { id: string } } {
   if (!env.CF_AI_GATEWAY_URL) return {}
   try {
-    const raw = await env.CF_AI_GATEWAY_URL.get()
     // URL format: https://gateway.ai.cloudflare.com/v1/{accountId}/{gatewayId}
-    const parsed = new URL(raw.trim())
+    const parsed = new URL(env.CF_AI_GATEWAY_URL.trim())
     const segments = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean)
     // Expect: ["v1", accountId, gatewayId]
     const id = segments.length >= 3 ? segments[2] : undefined
