@@ -33,8 +33,6 @@
 - Wiki-link autocomplete in BlockNote (slash menu or custom inline content)
 - AI inline actions (summarize selection, expand, rewrite) via `/api/generate/stream`
 - Image/file upload to R2 with BlockNote file blocks
-- Collaborative editing via Durable Objects + Yjs
-
 ### Search & Discovery
 - Hybrid search ranking improvements (BM25 + vector fusion)
 - Saved searches and search history
