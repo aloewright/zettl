@@ -48,7 +48,8 @@ export async function handleEmbedMessage(
       embedStatus: 'Done',
       embedError: null,
       embedUpdatedAt: isoNow(),
-      embeddingModel: 'text-embedding-3-large',
+      // Must match the model in generateEmbeddingAI (1024-dim output)
+      embeddingModel: '@cf/baai/bge-large-en-v1.5',
       embedRetryCount: 0,
     }).where(eq(notes.id, noteId))
 

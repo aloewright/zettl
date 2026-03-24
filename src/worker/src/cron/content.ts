@@ -1,10 +1,9 @@
-import OpenAI from 'openai'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import type { Env } from '../types'
 import { makeId, isoNow } from '../types'
 import * as schema from '../db/schema'
 import { createDb } from '../db/client'
-import { buildOpenAI } from '../services/embeddings'
+import { chatCompletion } from '../services/llm'
 
 type Db = ReturnType<typeof createDb>
 type Medium = 'Blog' | 'Social'
@@ -63,7 +62,7 @@ async function findClusterNotes(
 }
 
 async function generateContent(
-  openai: OpenAI,
+  env: Env,
   medium: Medium,
   seedNote: ClusterNote,
   clusterNotes: ClusterNote[],
@@ -91,8 +90,7 @@ Return a JSON object with keys: topicSummary (1 sentence), body (full markdown b
     : `You are a ghost-writer helping create social media content from Zettelkasten notes.${toneContext}${audienceContext}${exampleBlock}
 Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or LinkedIn post, markdown), description (1-sentence summary), tags (array of 3-5 hashtag strings without #).`
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o',
+  const raw = await chatCompletion(env, {
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -100,11 +98,11 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
         content: `Generate ${medium === 'Blog' ? 'a blog post' : 'a social media post'} from these notes:\n\n${notesBlock}`,
       },
     ],
-    response_format: { type: 'json_object' },
-    max_tokens: medium === 'Blog' ? 2000 : 800,
+    responseFormat: { type: 'json_object' },
+    maxTokens: medium === 'Blog' ? 2000 : 800,
   })
 
-  const parsed = JSON.parse(response.choices[0]?.message.content ?? '{}')
+  const parsed = JSON.parse(raw || '{}')
   return {
     topicSummary: parsed.topicSummary ?? 'Generated content',
     body: parsed.body ?? '',
@@ -115,7 +113,6 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
 
 export async function runContentCron(env: Env, medium: Medium): Promise<void> {
   const db = createDb(env.d1_db)
-  const openai = await buildOpenAI(env)
 
   const seedNote = await pickSeedNote(db, medium)
   if (!seedNote) {
@@ -135,7 +132,7 @@ export async function runContentCron(env: Env, medium: Medium): Promise<void> {
     .where(eq(schema.voiceExamples.medium, medium))
     .limit(3)
 
-  const generated = await generateContent(openai, medium, seedNote, clusterNotes, voiceConfig ?? null, examples)
+  const generated = await generateContent(env, medium, seedNote, clusterNotes, voiceConfig ?? null, examples)
 
   const generationId = makeId()
   await db.insert(schema.contentGenerations).values({

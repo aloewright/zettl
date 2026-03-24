@@ -110,6 +110,17 @@ CREATE TABLE IF NOT EXISTS "UsedSeedNotes" (
   "UsedAt"  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ── App settings (key-value) ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "AppSettings" (
+  "Key"   TEXT PRIMARY KEY,
+  "Value" TEXT NOT NULL
+);
+
+-- Seed default LLM settings
+INSERT OR IGNORE INTO "AppSettings" ("Key", "Value") VALUES ('llm:provider', 'openrouter');
+INSERT OR IGNORE INTO "AppSettings" ("Key", "Value") VALUES ('llm:model', 'openai/gpt-4o');
+
 -- ── Voice ─────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS "VoiceExamples" (

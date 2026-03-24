@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { notes, noteTags } from '../db/schema'
-import { buildOpenAI } from '../services/embeddings'
+import { chatCompletion } from '../services/llm'
 
 const router = new Hono<HonoEnv>()
 
@@ -230,7 +230,6 @@ router.post('/link', async (c) => {
 // POST /api/kb-health/summarize — generate a short AI summary for a note
 router.post('/summarize', async (c) => {
   const db = c.get('db')
-  const openai = await buildOpenAI(c.env)
   const body = await c.req.json<{ noteId: string }>()
   if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
 
@@ -238,8 +237,7 @@ router.post('/summarize', async (c) => {
     .from(notes).where(eq(notes.id, body.noteId))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+  const summary = await chatCompletion(c.env, {
     messages: [
       {
         role: 'system',
@@ -250,16 +248,15 @@ router.post('/summarize', async (c) => {
         content: `Title: ${note.title}\n\n${note.content}`,
       },
     ],
-    max_tokens: 200,
+    maxTokens: 200,
   })
 
-  return c.json({ summary: response.choices[0]?.message.content ?? '' })
+  return c.json({ summary })
 })
 
 // POST /api/kb-health/split — suggest split points for a large note
 router.post('/split', async (c) => {
   const db = c.get('db')
-  const openai = await buildOpenAI(c.env)
   const body = await c.req.json<{ noteId: string }>()
   if (!body.noteId) return c.json({ error: 'noteId required' }, 400)
 
@@ -267,8 +264,7 @@ router.post('/split', async (c) => {
     .from(notes).where(eq(notes.id, body.noteId))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+  const raw = await chatCompletion(c.env, {
     messages: [
       {
         role: 'system',
@@ -280,12 +276,12 @@ router.post('/split', async (c) => {
         content: `Title: ${note.title}\n\n${note.content}`,
       },
     ],
-    response_format: { type: 'json_object' },
-    max_tokens: 600,
+    responseFormat: { type: 'json_object' },
+    maxTokens: 600,
   })
 
   try {
-    const parsed = JSON.parse(response.choices[0]?.message.content ?? '{}')
+    const parsed = JSON.parse(raw || '{}')
     return c.json({ suggestions: parsed.suggestions ?? parsed })
   } catch {
     return c.json({ suggestions: [] })

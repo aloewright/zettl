@@ -19,7 +19,7 @@ function draftKey(noteId: string | undefined): string {
 export function useAutosave(
   noteId: string | undefined,
   title: string,
-  content: string,
+  content: string | (() => Promise<string>),
   tags: string[],
 ) {
   const timerRef = useRef<ReturnType<typeof setInterval>>(null)
@@ -29,10 +29,11 @@ export function useAutosave(
   // Skip autosave for existing notes (noteId === '__skip__')
   const shouldSkip = noteId === '__skip__'
 
-  const saveDraft = useCallback(() => {
+  const saveDraft = useCallback(async () => {
     if (shouldSkip) return
-    if (!title && !content) return
-    const draft: Draft = { title, content, tags, savedAt: Date.now() }
+    const contentStr = typeof content === 'function' ? await content() : content
+    if (!title && !contentStr) return
+    const draft: Draft = { title, content: contentStr, tags, savedAt: Date.now() }
     localStorage.setItem(draftKey(noteId), JSON.stringify(draft))
 
     setDraftSavedRecently(true)

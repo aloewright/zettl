@@ -28,10 +28,12 @@ export function SettingsPage() {
   const updateModel = useUpdateModel()
   const [selectedProvider, setSelectedProvider] = useState<'openrouter' | 'google'>('openrouter')
   const [selectedModel, setSelectedModel] = useState('')
+  const hasInitialized = useRef(false)
 
-  // Sync local state from server when loaded
+  // Sync local state from server on initial load only — avoid overwriting in-flight edits
   useEffect(() => {
-    if (modelSettings) {
+    if (modelSettings && !hasInitialized.current) {
+      hasInitialized.current = true
       setSelectedProvider(modelSettings.provider)
       setSelectedModel(modelSettings.model)
     }

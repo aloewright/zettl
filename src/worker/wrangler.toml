@@ -54,9 +54,15 @@ crons = ["0 9 * * MON", "0 9 * * *"]
 # Secrets Store ID: e328ab1e3e624d24b1712d38aad51017
 
 [[secrets_store_secrets]]
-binding = "OPENAI_API_KEY"
+binding = "OPENROUTER_API_KEY"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "OPENAI_API_KEY"
+secret_name = "OPENROUTER_API_KEY"
+
+# GOOGLE_API_KEY — uncomment after creating the secret in the Secrets Store
+# [[secrets_store_secrets]]
+# binding = "GOOGLE_API_KEY"
+# store_id = "e328ab1e3e624d24b1712d38aad51017"
+# secret_name = "GOOGLE_API_KEY"
 
 [[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"
