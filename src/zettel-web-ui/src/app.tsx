@@ -7,30 +7,47 @@ import { EditorPage } from '@/pages/editor'
 import { NotFoundPage } from '@/pages/not-found'
 import { CallbackPage } from '@/pages/callback'
 
+/** Wrap a dynamic import so stale-asset 404s trigger a full page reload. */
+function lazyWithReload<T extends Record<string, unknown>>(
+  factory: () => Promise<T>,
+): Promise<T> {
+  return factory().catch((err: unknown) => {
+    const alreadyReloaded = sessionStorage.getItem('chunk-reload')
+    if (!alreadyReloaded) {
+      sessionStorage.setItem('chunk-reload', '1')
+      window.location.reload()
+    }
+    throw err
+  })
+}
+
 const GraphPage = lazy(() =>
-  import('./pages/graph').then((m) => ({ default: m.GraphPage })),
+  lazyWithReload(() => import('./pages/graph')).then((m) => ({ default: m.GraphPage })),
 )
 const InboxPage = lazy(() =>
-  import('./pages/inbox').then((m) => ({ default: m.InboxPage })),
+  lazyWithReload(() => import('./pages/inbox')).then((m) => ({ default: m.InboxPage })),
 )
 const SettingsPage = lazy(() =>
-  import('./pages/settings').then((m) => ({ default: m.SettingsPage })),
+  lazyWithReload(() => import('./pages/settings')).then((m) => ({ default: m.SettingsPage })),
 )
 const ContentReviewPage = lazy(() =>
-  import('./pages/content-review').then((m) => ({ default: m.ContentReviewPage })),
+  lazyWithReload(() => import('./pages/content-review')).then((m) => ({ default: m.ContentReviewPage })),
 )
 const VoiceConfigPage = lazy(() =>
-  import('./pages/voice-config').then((m) => ({ default: m.VoiceConfigPage })),
+  lazyWithReload(() => import('./pages/voice-config')).then((m) => ({ default: m.VoiceConfigPage })),
 )
 const VoicePage = lazy(() =>
-  import('./pages/voice').then((m) => ({ default: m.VoicePage })),
+  lazyWithReload(() => import('./pages/voice')).then((m) => ({ default: m.VoicePage })),
 )
 const KbHealthPage = lazy(() =>
-  import('./pages/kb-health').then((m) => ({ default: m.KbHealthPage })),
+  lazyWithReload(() => import('./pages/kb-health')).then((m) => ({ default: m.KbHealthPage })),
 )
 const ResearchPage = lazy(() =>
-  import('./pages/research').then((m) => ({ default: m.ResearchPage })),
+  lazyWithReload(() => import('./pages/research')).then((m) => ({ default: m.ResearchPage })),
 )
+
+// Clear stale-asset reload guard on successful load
+sessionStorage.removeItem('chunk-reload')
 
 function LazyFallback() {
   return (
