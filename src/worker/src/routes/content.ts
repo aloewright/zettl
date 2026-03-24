@@ -9,6 +9,7 @@ import {
   notes,
   voiceConfigs,
   voiceExamples,
+  appSettings,
 } from '../db/schema'
 import { chatCompletion } from '../services/llm'
 
@@ -777,6 +778,174 @@ router.get('/seed-candidates', async (c) => {
     .limit(limit)
 
   return c.json(rows)
+})
+
+// ── Voice examples (mounted at /api/content/voice/examples) ──────────────────
+
+router.get('/voice/examples', async (c) => {
+  const db = c.get('db')
+  const medium = c.req.query('medium')
+
+  const rows = await db.select().from(voiceExamples)
+    .where(medium ? eq(voiceExamples.medium, medium) : undefined)
+    .orderBy(desc(voiceExamples.createdAt))
+
+  // Normalize for frontend VoiceExample type
+  return c.json(rows.map(r => ({
+    ...r,
+    title: null,
+    source: null,
+  })))
+})
+
+router.post('/voice/examples', async (c) => {
+  const db = c.get('db')
+  const body = await c.req.json<{ medium: string; title?: string; content: string; source?: string }>()
+  if (!body.medium || !body.content) {
+    return c.json({ error: 'medium and content are required' }, 400)
+  }
+
+  const id = makeId()
+  await db.insert(voiceExamples).values({
+    id,
+    medium: body.medium,
+    content: body.content,
+    createdAt: isoNow(),
+  })
+  const [created] = await db.select().from(voiceExamples).where(eq(voiceExamples.id, id))
+  return c.json({ ...created, title: body.title ?? null, source: body.source ?? null }, 201)
+})
+
+router.delete('/voice/examples/:id', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const [existing] = await db.select({ id: voiceExamples.id }).from(voiceExamples)
+    .where(eq(voiceExamples.id, id))
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+  await db.delete(voiceExamples).where(eq(voiceExamples.id, id))
+  return c.json({ deleted: true })
+})
+
+// ── Voice config (mounted at /api/content/voice/config) ──────────────────────
+
+router.get('/voice/config', async (c) => {
+  const db = c.get('db')
+  const medium = c.req.query('medium')
+
+  const rows = await db.select().from(voiceConfigs)
+    .where(medium ? eq(voiceConfigs.medium, medium) : undefined)
+
+  // Normalize: frontend VoiceConfig has `styleNotes` not `toneDescription`
+  return c.json(rows.map(r => ({
+    id: r.id,
+    medium: r.medium,
+    styleNotes: r.toneDescription ?? null,
+    updatedAt: r.updatedAt,
+  })))
+})
+
+router.put('/voice/config', async (c) => {
+  const db = c.get('db')
+  const body = await c.req.json<{ medium: string; styleNotes?: string }>()
+  if (!body.medium) return c.json({ error: 'medium is required' }, 400)
+
+  // Find existing config for this medium
+  const [existing] = await db.select().from(voiceConfigs)
+    .where(eq(voiceConfigs.medium, body.medium))
+
+  if (existing) {
+    await db.update(voiceConfigs).set({
+      toneDescription: body.styleNotes ?? existing.toneDescription,
+      updatedAt: isoNow(),
+    }).where(eq(voiceConfigs.id, existing.id))
+
+    const [updated] = await db.select().from(voiceConfigs).where(eq(voiceConfigs.id, existing.id))
+    if (!updated) return c.json({ error: 'Config not found after update' }, 500)
+    return c.json({
+      id: updated.id,
+      medium: updated.medium,
+      styleNotes: updated.toneDescription ?? null,
+      updatedAt: updated.updatedAt,
+    })
+  } else {
+    const id = makeId()
+    await db.insert(voiceConfigs).values({
+      id,
+      medium: body.medium,
+      toneDescription: body.styleNotes ?? null,
+      audienceDescription: null,
+      updatedAt: isoNow(),
+    })
+    const [created] = await db.select().from(voiceConfigs).where(eq(voiceConfigs.id, id))
+    if (!created) return c.json({ error: 'Config not found after create' }, 500)
+    return c.json({
+      id: created.id,
+      medium: created.medium,
+      styleNotes: created.toneDescription ?? null,
+      updatedAt: created.updatedAt,
+    }, 201)
+  }
+})
+
+// ── Schedule (mounted at /api/content/schedule) ──────────────────────────────
+
+router.get('/schedule', async (c) => {
+  const db = c.get('db')
+
+  const settings = await db.select().from(appSettings)
+    .where(sql`"Key" LIKE 'schedule:%'`)
+
+  const settingsMap: Record<string, string> = {}
+  for (const s of settings) {
+    settingsMap[s.key] = s.value
+  }
+
+  return c.json({
+    blog: {
+      enabled: settingsMap['schedule:blog:enabled'] === 'true',
+      dayOfWeek: settingsMap['schedule:blog:dayOfWeek'] ?? 'Monday',
+      timeOfDay: settingsMap['schedule:blog:timeOfDay'] ?? '09:00',
+    },
+    social: {
+      enabled: settingsMap['schedule:social:enabled'] === 'true',
+      timeOfDay: settingsMap['schedule:social:timeOfDay'] ?? '09:00',
+    },
+  })
+})
+
+router.put('/schedule/blog', async (c) => {
+  const db = c.get('db')
+  const body = await c.req.json<{ enabled: boolean; dayOfWeek: string; timeOfDay: string }>()
+
+  const pairs = [
+    { key: 'schedule:blog:enabled', value: String(body.enabled) },
+    { key: 'schedule:blog:dayOfWeek', value: body.dayOfWeek },
+    { key: 'schedule:blog:timeOfDay', value: body.timeOfDay },
+  ]
+
+  for (const { key, value } of pairs) {
+    await db.insert(appSettings).values({ key, value })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value } })
+  }
+
+  return c.json(body)
+})
+
+router.put('/schedule/social', async (c) => {
+  const db = c.get('db')
+  const body = await c.req.json<{ enabled: boolean; timeOfDay: string }>()
+
+  const pairs = [
+    { key: 'schedule:social:enabled', value: String(body.enabled) },
+    { key: 'schedule:social:timeOfDay', value: body.timeOfDay },
+  ]
+
+  for (const { key, value } of pairs) {
+    await db.insert(appSettings).values({ key, value })
+      .onConflictDoUpdate({ target: appSettings.key, set: { value } })
+  }
+
+  return c.json(body)
 })
 
 export default router

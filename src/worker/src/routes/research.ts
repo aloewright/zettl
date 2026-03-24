@@ -1,10 +1,115 @@
 import { Hono } from 'hono'
-import { eq, desc, and } from 'drizzle-orm'
+import { eq, desc, and, sql, inArray } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
 import { researchAgendas, researchTasks, researchFindings, notes } from '../db/schema'
+import { chatCompletion } from '../services/llm'
 
 const router = new Hono<HonoEnv>()
+
+// ── Trigger (AI-driven research agenda generation) ─────────────────────────────
+
+// POST /api/research/trigger — generate a research agenda from KB gaps
+router.post('/trigger', async (c) => {
+  const db = c.get('db')
+  const body = await c.req.json<{ sourceNoteId?: string | null }>().catch(() => ({ sourceNoteId: null }))
+
+  // Find notes to analyze for research gaps
+  let contextNotes: { id: string; title: string; content: string }[]
+
+  if (body.sourceNoteId) {
+    contextNotes = await db.select({
+      id: notes.id,
+      title: notes.title,
+      content: notes.content,
+    }).from(notes).where(eq(notes.id, body.sourceNoteId))
+  } else {
+    // Pick random permanent notes for context
+    contextNotes = await db.select({
+      id: notes.id,
+      title: notes.title,
+      content: notes.content,
+    }).from(notes)
+      .where(eq(notes.status, 'Permanent'))
+      .orderBy(sql`RANDOM()`)
+      .limit(5)
+  }
+
+  if (!contextNotes.length) {
+    return c.json({ error: 'No notes found to analyze for research gaps' }, 422)
+  }
+
+  const notesBlock = contextNotes
+    .map(n => `### ${n.title}\n${n.content.slice(0, 500)}`)
+    .join('\n\n')
+
+  const raw = await chatCompletion(c.env, {
+    messages: [
+      {
+        role: 'system',
+        content: `You are a research assistant for a Zettelkasten knowledge base. Analyze the provided notes and identify knowledge gaps that could be filled through research.
+
+Return a JSON object with key "tasks" containing an array of 3-5 research tasks. Each task should have:
+- "query": a specific search query
+- "sourceType": either "WebSearch" or "Arxiv"
+- "motivation": why this research would be valuable
+- "motivationNoteId": the ID of the note that inspired this task (from the provided notes)`,
+      },
+      {
+        role: 'user',
+        content: `Analyze these notes and suggest research tasks:\n\n${notesBlock}`,
+      },
+    ],
+    responseFormat: { type: 'json_object' },
+    maxTokens: 1000,
+  })
+
+  let tasks: Array<{
+    query: string
+    sourceType: string
+    motivation: string
+    motivationNoteId?: string
+  }>
+
+  try {
+    const parsed = JSON.parse(raw || '{}')
+    tasks = parsed.tasks ?? []
+  } catch {
+    tasks = []
+  }
+
+  if (!tasks.length) {
+    return c.json({ error: 'Could not generate research tasks. Try again.' }, 422)
+  }
+
+  const agendaId = makeId()
+  await db.insert(researchAgendas).values({
+    id: agendaId,
+    triggeredFromNoteId: body.sourceNoteId ?? null,
+    status: 'Pending',
+    createdAt: isoNow(),
+  })
+
+  const taskRows = tasks.map(t => ({
+    id: makeId(),
+    agendaId,
+    query: t.query,
+    sourceType: t.sourceType || 'WebSearch',
+    motivation: t.motivation,
+    motivationNoteId: t.motivationNoteId ?? null,
+    status: 'Pending' as const,
+  }))
+
+  await db.insert(researchTasks).values(taskRows)
+
+  const createdTasks = await db.select().from(researchTasks)
+    .where(eq(researchTasks.agendaId, agendaId))
+
+  const [agenda] = await db.select().from(researchAgendas)
+    .where(eq(researchAgendas.id, agendaId))
+
+  return c.json({ ...agenda, tasks: createdTasks }, 201)
+})
 
 // ── Agendas ────────────────────────────────────────────────────────────────────
 
@@ -74,9 +179,11 @@ router.post('/agendas', async (c) => {
   return c.json({ ...created, tasks }, 201)
 })
 
+// POST /api/research/agendas/:id/approve
 router.post('/agendas/:id/approve', async (c) => {
   const db = c.get('db')
   const id = c.req.param('id')
+  const body = await c.req.json<{ blockedTaskIds?: string[] }>().catch(() => ({ blockedTaskIds: [] }))
 
   const [existing] = await db.select().from(researchAgendas)
     .where(eq(researchAgendas.id, id))
@@ -86,6 +193,45 @@ router.post('/agendas/:id/approve', async (c) => {
     status: 'Approved',
     approvedAt: isoNow(),
   }).where(eq(researchAgendas.id, id))
+
+  // Block specified tasks
+  if (body.blockedTaskIds?.length) {
+    for (const taskId of body.blockedTaskIds) {
+      await db.update(researchTasks).set({
+        status: 'Blocked',
+        blockedAt: isoNow(),
+      }).where(eq(researchTasks.id, taskId))
+    }
+  }
+
+  const [updated] = await db.select().from(researchAgendas)
+    .where(eq(researchAgendas.id, id))
+  return c.json(updated)
+})
+
+// POST /api/research/agenda/:id/approve — singular alias for frontend compatibility
+router.post('/agenda/:id/approve', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const body = await c.req.json<{ blockedTaskIds?: string[] }>().catch(() => ({ blockedTaskIds: [] }))
+
+  const [existing] = await db.select().from(researchAgendas)
+    .where(eq(researchAgendas.id, id))
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+
+  await db.update(researchAgendas).set({
+    status: 'Approved',
+    approvedAt: isoNow(),
+  }).where(eq(researchAgendas.id, id))
+
+  if (body.blockedTaskIds?.length) {
+    for (const taskId of body.blockedTaskIds) {
+      await db.update(researchTasks).set({
+        status: 'Blocked',
+        blockedAt: isoNow(),
+      }).where(eq(researchTasks.id, taskId))
+    }
+  }
 
   const [updated] = await db.select().from(researchAgendas)
     .where(eq(researchAgendas.id, id))
@@ -98,6 +244,7 @@ router.delete('/agendas/:id', async (c) => {
   const [existing] = await db.select({ id: researchAgendas.id }).from(researchAgendas)
     .where(eq(researchAgendas.id, id))
   if (!existing) return c.json({ error: 'Not found' }, 404)
+  await db.delete(researchTasks).where(eq(researchTasks.agendaId, id))
   await db.delete(researchAgendas).where(eq(researchAgendas.id, id))
   return c.json({ deleted: true })
 })
@@ -127,24 +274,20 @@ router.put('/tasks/:id', async (c) => {
 
 // ── Findings ───────────────────────────────────────────────────────────────────
 
+// GET /api/research/findings — frontend expects a flat array (not paged)
 router.get('/findings', async (c) => {
   const db = c.get('db')
-  const { status, page = '1', pageSize = '20' } = c.req.query()
-  const pageNum = Math.max(1, parseInt(page))
-  const size = Math.min(100, Math.max(1, parseInt(pageSize)))
-  const offset = (pageNum - 1) * size
+  const status = c.req.query('status')
 
   const condition = status ? eq(researchFindings.status, status) : undefined
 
-  const [rows, countRows] = await Promise.all([
-    db.select().from(researchFindings)
-      .where(condition)
-      .orderBy(desc(researchFindings.createdAt))
-      .limit(size).offset(offset),
-    db.select({ count: researchFindings.id }).from(researchFindings).where(condition),
-  ])
+  const rows = await db.select().from(researchFindings)
+    .where(condition)
+    .orderBy(desc(researchFindings.createdAt))
+    .limit(100)
 
-  return c.json({ items: rows, totalCount: countRows.length })
+  // Frontend expects a flat array
+  return c.json(rows)
 })
 
 router.get('/findings/:id', async (c) => {
@@ -200,9 +343,8 @@ router.post('/findings/:id/accept', async (c) => {
 
   // Create a fleeting note from the finding
   const noteId = makeId()
-  const now = new Date()
+  const nowIso = new Date().toISOString()
 
-  const nowIso = now.toISOString()
   await db.insert(notes).values({
     id: noteId,
     title: finding.title,
@@ -223,11 +365,29 @@ router.post('/findings/:id/accept', async (c) => {
     reviewedAt: nowIso,
   }).where(eq(researchFindings.id, id))
 
-  const [updated] = await db.select().from(researchFindings)
-    .where(eq(researchFindings.id, id))
-  return c.json({ finding: updated, noteId })
+  // Return the created note (frontend expects a Note)
+  const [note] = await db.select().from(notes).where(eq(notes.id, noteId))
+  return c.json(note)
 })
 
+// POST /api/research/findings/:id/dismiss — alias for reject
+router.post('/findings/:id/dismiss', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+
+  const [existing] = await db.select({ id: researchFindings.id }).from(researchFindings)
+    .where(eq(researchFindings.id, id))
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+
+  await db.update(researchFindings).set({
+    status: 'Rejected',
+    reviewedAt: isoNow(),
+  }).where(eq(researchFindings.id, id))
+
+  return c.json({ success: true })
+})
+
+// POST /api/research/findings/:id/reject — keep original route too
 router.post('/findings/:id/reject', async (c) => {
   const db = c.get('db')
   const id = c.req.param('id')

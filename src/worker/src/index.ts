@@ -64,6 +64,14 @@ app.route('/api/tts', ttsRouter)
 app.route('/api/settings', settingsRouter)
 app.route('/api/generate', generateRouter)
 
+// /api/discover — alias for /api/notes/discover
+app.get('/api/discover', async (c) => {
+  // Forward to notes discover endpoint
+  const url = new URL(c.req.url)
+  url.pathname = '/api/notes/discover'
+  return app.fetch(new Request(url.toString(), c.req.raw), c.env, c.executionCtx)
+})
+
 // ── Health ─────────────────────────────────────────────────────────────────────
 
 app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() }))

@@ -78,10 +78,39 @@ router.get('/inbox/count', async (c) => {
 
 router.get('/discover', async (c) => {
   const db = c.get('db')
-  const rows = await db.select().from(notes)
-    .where(and(eq(notes.status, 'Permanent'), eq(notes.noteType, 'Regular')))
-    .orderBy(sql`RANDOM()`)
-    .limit(5)
+  const mode = c.req.query('mode') ?? 'random'
+  const limit = Math.min(20, Math.max(1, parseInt(c.req.query('limit') ?? '5')))
+
+  let rows: typeof notes.$inferSelect[]
+
+  if (mode === 'orphans') {
+    // Notes with no tags and no wiki-links
+    rows = await db.select().from(notes)
+      .where(and(
+        eq(notes.status, 'Permanent'),
+        sql`"Id" NOT IN (SELECT DISTINCT "NoteId" FROM "NoteTags")`,
+        sql`"Content" NOT LIKE '%[[%]]%'`,
+      ))
+      .orderBy(sql`RANDOM()`)
+      .limit(limit)
+  } else if (mode === 'today') {
+    // Notes created today
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    rows = await db.select().from(notes)
+      .where(and(
+        eq(notes.status, 'Permanent'),
+        sql`"CreatedAt" >= ${todayStart.toISOString()}`,
+      ))
+      .orderBy(desc(notes.createdAt))
+      .limit(limit)
+  } else {
+    // random (default)
+    rows = await db.select().from(notes)
+      .where(and(eq(notes.status, 'Permanent'), eq(notes.noteType, 'Regular')))
+      .orderBy(sql`RANDOM()`)
+      .limit(limit)
+  }
 
   const noteIds = rows.map(r => r.id)
   const tags = noteIds.length
