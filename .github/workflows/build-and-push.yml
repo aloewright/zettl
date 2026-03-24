@@ -25,6 +25,7 @@ jobs:
       - run: npm ci
         working-directory: src/worker
 
+      # Worker currently only has TypeScript type checking; add npm test / npm run lint here once such scripts exist.
       - run: npm run typecheck
         working-directory: src/worker
 
