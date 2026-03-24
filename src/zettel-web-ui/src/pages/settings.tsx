@@ -11,6 +11,13 @@ import { importNotes, exportNotes } from '@/api/import-export'
 import { logout } from '@/auth'
 import { toast } from 'sonner'
 
+/**
+ * Render the Settings page UI for configuring models, importing/exporting notes, re-embedding, viewing health, and account actions.
+ *
+ * The page provides controls to select and save an LLM provider and model, import markdown files as notes (with optional embedding progress), download a notes export, queue notes for re-embedding, and view service/database health metrics. It also exposes a sign-out action.
+ *
+ * @returns The JSX element for the Settings page
+ */
 export function SettingsPage() {
   const reEmbed = useReEmbed()
   const [showEmbedProgress, setShowEmbedProgress] = useState(false)

@@ -4,7 +4,13 @@ import type { Env } from '../types'
 // ── Workers AI embeddings ────────────────────────────────────────────────────
 // Uses @cf/baai/bge-large-en-v1.5 (1024-dim) via the ai_binding.
 // When CF_AI_GATEWAY_URL is set, routes through AI Gateway for
-// caching, rate-limit visibility, and cost tracking.
+/**
+ * Generate an embedding vector for the given text using the Workers AI binding model.
+ *
+ * @param env - Worker environment containing `ai_binding` and optional `CF_AI_GATEWAY_URL` used to route the request
+ * @param text - Input text to embed
+ * @returns The first embedding vector returned by the model, or an empty array if no embedding is available
+ */
 
 export async function generateEmbeddingAI(
   env: Env,
@@ -19,7 +25,14 @@ export async function generateEmbeddingAI(
   return result.data?.[0] ?? []
 }
 
-/** Parse the gateway ID from CF_AI_GATEWAY_URL for use with the Workers AI binding. */
+/**
+ * Extract the Workers AI gateway ID from env.CF_AI_GATEWAY_URL.
+ *
+ * If the URL is present and a trailing segment can be parsed as the gateway ID,
+ * returns an object of the form `{ gateway: { id } }`; otherwise returns an empty object.
+ *
+ * @returns `{ gateway: { id: string } }` when an ID is found, otherwise `{}`.
+ */
 async function workersAIGatewayOpts(
   env: Env,
 ): Promise<{ gateway?: { id: string } }> {
@@ -36,7 +49,11 @@ async function workersAIGatewayOpts(
 
 // ── OpenAI client (LLM tasks only) ────────────────────────────────────────
 // Used for content generation, summarize, split — tasks that need
-// reliable structured JSON output. Routed through AI Gateway when set.
+/**
+ * Constructs an OpenAI client using the environment's API key and optional Workers AI Gateway routing.
+ *
+ * @param env - Environment bindings; reads `OPENAI_API_KEY` and, when present, `CF_AI_GATEWAY_URL` to derive a gateway-backed OpenAI base URL.
+ * @returns An `OpenAI` client configured with the retrieved API key and `baseURL` pointing to `<gateway>/openai/v1` when `CF_AI_GATEWAY_URL` is set and valid.
 
 export async function buildOpenAI(env: Env): Promise<OpenAI> {
   const apiKey = await env.OPENAI_API_KEY.get()

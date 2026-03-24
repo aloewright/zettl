@@ -5,6 +5,14 @@ import { createDb } from '../db/client'
 import { notes } from '../db/schema'
 import { generateEmbeddingAI } from '../services/embeddings'
 
+/**
+ * Process a single embedding queue message for a note: compute its text embedding, upsert it into the vector store, and update the note's embedding status in the database.
+ *
+ * On success the note's embed status is set to "Done" and embedding metadata is written to the vector DB. If the note no longer exists the function returns without further action. On failure the note's embed status and retry count are updated and the original error is rethrown to allow the queue to retry.
+ *
+ * @param message - Queue message whose body contains `noteId` identifying the note to embed
+ * @param env - Runtime environment providing `d1_db` (D1) and `vector_db` (vector store) used for updates and upserts
+ */
 export async function handleEmbedMessage(
   message: Message<EmbedQueueMessage>,
   env: Env,
