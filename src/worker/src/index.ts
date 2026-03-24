@@ -16,6 +16,7 @@ import readwiseRouter from './routes/readwise'
 import ttsRouter from './routes/tts'
 import settingsRouter from './routes/settings'
 import generateRouter from './routes/generate'
+import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
@@ -33,12 +34,15 @@ app.use('*', cors({
 
 app.use('/api/*', dbMiddleware)
 
+// Auth endpoints handle their own JWT verification
+app.route('/api/auth', authRouter)
+
 // Capture endpoints use webhook secret auth, not JWT — skip authMiddleware
 app.use('/api/capture/*', async (c, next) => next())
 // All other /api routes require JWT
 app.use('/api/*', async (c, next) => {
-  // Skip auth for capture routes (handled inside the router)
-  if (c.req.path.startsWith('/api/capture/')) return next()
+  // Skip auth for capture and auth routes (handled inside their routers)
+  if (c.req.path.startsWith('/api/capture/') || c.req.path.startsWith('/api/auth/')) return next()
   return authMiddleware(c, next)
 })
 

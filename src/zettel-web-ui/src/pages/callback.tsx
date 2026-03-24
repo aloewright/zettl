@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router'
 
 /**
- * Fallback callback route — auth is now handled server-side by the
- * Cloudflare Pages Function at /api/auth/kinde_callback.
+ * Fallback callback route — auth is handled by Cloudflare Access.
  * If the browser lands here, simply redirect home.
  */
 export function CallbackPage() {
