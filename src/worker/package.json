@@ -9,14 +9,14 @@
     "build": "cd ../zettel-web-ui && npm ci && npm run build"
   },
   "dependencies": {
-    "drizzle-orm": "^0.43.1",
+    "drizzle-orm": "^0.45.1",
     "hono": "^4.12.9",
-    "jose": "^5.10.0"
+    "jose": "^6.2.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250404.0",
     "drizzle-kit": "^0.31.1",
-    "typescript": "^5.8.3",
+    "typescript": "^6.0.2",
     "wrangler": "^4.0.0"
   }
 }
