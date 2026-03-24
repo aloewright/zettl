@@ -8,6 +8,13 @@ import { useCommandMenu } from '@/hooks/use-command-menu'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { toast } from 'sonner'
 
+/**
+ * Top-level application shell that renders the header, routed content, command menu, capture button, and keyboard shortcuts dialog while managing related global UI state.
+ *
+ * Registers global listeners for tag-search events and online/offline status, and wires keyboard shortcut handlers (including navigation to settings).
+ *
+ * @returns The rendered application shell React element.
+ */
 export function AppShell() {
   const navigate = useNavigate()
   const { open, setOpen } = useCommandMenu()
