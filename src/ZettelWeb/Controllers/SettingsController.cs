@@ -22,6 +22,13 @@ public class SettingsController : ControllerBase
     private static AvailableModels? _modelsCache;
     private static DateTime _modelsCacheExpiry = DateTime.MinValue;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="SettingsController"/> with its required services.
+    /// </summary>
+    /// <param name="db">Entity Framework database context for accessing application settings.</param>
+    /// <param name="cache">In-memory application settings cache used for fast reads and updates.</param>
+    /// <param name="httpClientFactory">Factory to create named HTTP clients for fetching external model lists.</param>
+    /// <param name="configuration">Application configuration source for provider keys and gateway URLs.</param>
     public SettingsController(
         ZettelDbContext db,
         AppSettingsCache cache,
@@ -34,7 +41,10 @@ public class SettingsController : ControllerBase
         _configuration = configuration;
     }
 
-    // GET /api/settings
+    /// <summary>
+    /// Retrieves the current LLM provider and model, reading values from the settings cache with configuration fallbacks.
+    /// </summary>
+    /// <returns>An OK (<c>200</c>) response containing an anonymous object with `provider` and `model` properties.</returns>
     [HttpGet]
     public IActionResult GetSettings()
     {
@@ -45,7 +55,12 @@ public class SettingsController : ControllerBase
         return Ok(new { provider, model });
     }
 
-    // PUT /api/settings/model
+    /// <summary>
+    /// Updates persisted LLM provider and model settings and refreshes the in-memory cache.
+    /// </summary>
+    /// <param name="request">Request containing the provider and model identifiers to set.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>204 No Content on success; 400 Bad Request when provider or model is missing.</returns>
     [HttpPut("model")]
     public async Task<IActionResult> UpdateModel(
         [FromBody] UpdateModelRequest request,
@@ -65,7 +80,14 @@ public class SettingsController : ControllerBase
         return NoContent();
     }
 
-    // GET /api/settings/models
+    /// <summary>
+    /// Returns available LLM models from configured providers, using an in-memory cache with a 10-minute time-to-live.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation while waiting for or performing a cache refresh.</param>
+    /// <returns>
+    /// An <see cref="AvailableModels"/> object wrapped in a 200 OK response containing model lists for each provider;
+    /// when the cache is expired the endpoint refreshes the lists (only one refresh occurs concurrently) and then returns the refreshed value.
+    /// </returns>
     [HttpGet("models")]
     public async Task<IActionResult> GetModels(CancellationToken cancellationToken)
     {
@@ -98,7 +120,12 @@ public class SettingsController : ControllerBase
         }
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────
+    /// <summary>
+    /// Gets available models from the OpenRouter API and converts them into LlmModelInfo entries.
+    /// </summary>
+    /// <param name="aiGatewayUrl">Optional base URL of an AI gateway to route the OpenRouter request; when null or empty the default OpenRouter endpoint is used.</param>
+    /// <param name="apiKey">OpenRouter API key used for authorization; when empty the method returns an empty list.</param>
+    /// <returns>A list of LlmModelInfo objects for each discovered model, or an empty list if the API key is missing, the HTTP request fails, or the response cannot be parsed.</returns>
 
     private async Task<List<LlmModelInfo>> FetchOpenRouterModelsAsync(
         string? aiGatewayUrl, string apiKey, CancellationToken ct)
@@ -147,6 +174,12 @@ public class SettingsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Fetches available Google generative models and returns entries for models that support the "generateContent" generation method.
+    /// </summary>
+    /// <param name="aiGatewayUrl">Optional base URL of a configured AI gateway; when provided the request is routed through this gateway, otherwise the public Google endpoint is used.</param>
+    /// <param name="apiKey">Google API key; when empty the method returns an empty list.</param>
+    /// <returns>A list of LlmModelInfo for models that support "generateContent"; returns an empty list on HTTP errors, parse errors, or when no API key is provided.</returns>
     private async Task<List<LlmModelInfo>> FetchGoogleModelsAsync(
         string? aiGatewayUrl, string apiKey, CancellationToken ct)
     {
@@ -194,6 +227,13 @@ public class SettingsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Inserts a new AppSetting into the DbContext or updates the existing setting for the specified key.
+    /// </summary>
+    /// <param name="key">The settings key to insert or update.</param>
+    /// <param name="value">The value to store for the key.</param>
+    /// <param name="now">Timestamp to set on the setting's UpdatedAt field.</param>
+    /// <param name="ct">Cancellation token for the database lookup operation.</param>
     private async Task UpsertSettingAsync(
         string key, string value, DateTime now, CancellationToken ct)
     {

@@ -63,6 +63,13 @@ function isReadwiseFormat(content: string): boolean {
     content.includes('### Highlights')
 }
 
+/**
+ * Parse a Readwise-exported Markdown file and produce a normalized ParsedNote.
+ *
+ * @param fileName - The source filename (the `.md` extension is removed when deriving the title)
+ * @param content - The full Markdown content of the file
+ * @returns A ParsedNote where `content` is the Highlights section when present (otherwise the full file), `tags` contains the parsed category if present, `noteType` is `"Source"`, and source metadata (`sourceAuthor`, `sourceType`, `sourceUrl`) are populated when available
+ */
 function parseReadwiseFile(fileName: string, content: string): ParsedNote {
   const lines = content.split('\n')
   let title = fileName.replace(/\.md$/i, '')
@@ -122,6 +129,18 @@ function parseReadwiseFile(fileName: string, content: string): ParsedNote {
   }
 }
 
+/**
+ * Parse a Markdown file produced by Readwise, Notion, or plain Markdown into a normalized note.
+ *
+ * Detects Readwise and Notion export formats and extracts title, body, tags, and created date when present;
+ * for plain Markdown the filename is used to derive the title. Notion-specific header fields (`Tags:` and `Created:`)
+ * are parsed from the top header area and Notion-style page links containing 32-hex UIDs are rewritten to `[[...]]`.
+ *
+ * @param fileName - The source file name (used to derive a fallback title when the file has no explicit heading)
+ * @param content - The raw Markdown file contents
+ * @returns A ParsedNote containing `title`, `content`, `tags`, and `createdAt` when available; additional source fields
+ * may be populated for Readwise inputs
+ */
 function parseMarkdownFile(fileName: string, content: string): ParsedNote {
   if (isReadwiseFormat(content)) return parseReadwiseFile(fileName, content)
   if (isNotionFormat(content)) {

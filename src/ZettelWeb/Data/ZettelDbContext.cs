@@ -23,6 +23,10 @@ public class ZettelDbContext : DbContext
     public DbSet<ResearchFinding> ResearchFindings => Set<ResearchFinding>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
+    /// <summary>
+    /// Configures the Entity Framework Core model for the ZettelWeb schema and registers the PostgreSQL vector extension.
+    /// </summary>
+    /// <param name="modelBuilder">The ModelBuilder used to configure entity mappings, keys, constraints, relationships, JSON/column types, defaults, and indexes.</param>
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("vector");
