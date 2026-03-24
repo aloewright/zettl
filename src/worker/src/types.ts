@@ -8,7 +8,8 @@ export interface Env {
   // Workers AI binding
   ai_binding: Ai
   // Cloudflare Secrets Store bindings — access via await env.X.get()
-  OPENAI_API_KEY: SecretsStoreSecret
+  OPENROUTER_API_KEY?: SecretsStoreSecret
+  GOOGLE_API_KEY?: SecretsStoreSecret
   CF_AI_GATEWAY_URL?: SecretsStoreSecret // optional binding
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding

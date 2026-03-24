@@ -5,13 +5,13 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "cd ../zettel-web-ui && npm ci && npm run build"
   },
   "dependencies": {
     "drizzle-orm": "^0.43.1",
     "hono": "^4.7.7",
-    "jose": "^5.10.0",
-    "openai": "^4.99.0"
+    "jose": "^5.10.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250404.0",

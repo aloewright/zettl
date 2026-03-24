@@ -87,6 +87,13 @@ export const voiceConfigs = sqliteTable('VoiceConfigs', {
   updatedAt: text('UpdatedAt').notNull(),
 })
 
+// ── App settings (key-value) ─────────────────────────────────────────────────
+
+export const appSettings = sqliteTable('AppSettings', {
+  key: text('Key').primaryKey(),
+  value: text('Value').notNull(),
+})
+
 // ── Research ──────────────────────────────────────────────────────────────────
 
 export const researchAgendas = sqliteTable('ResearchAgendas', {

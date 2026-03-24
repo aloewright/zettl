@@ -14,6 +14,8 @@ import researchRouter from './routes/research'
 import importExportRouter from './routes/import-export'
 import readwiseRouter from './routes/readwise'
 import ttsRouter from './routes/tts'
+import settingsRouter from './routes/settings'
+import generateRouter from './routes/generate'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
@@ -55,6 +57,8 @@ app.route('/api/export', importExportRouter)
 app.route('/api/import', importExportRouter)
 app.route('/api/readwise', readwiseRouter)
 app.route('/api/tts', ttsRouter)
+app.route('/api/settings', settingsRouter)
+app.route('/api/generate', generateRouter)
 
 // ── Health ─────────────────────────────────────────────────────────────────────
 

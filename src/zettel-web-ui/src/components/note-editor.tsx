@@ -1,14 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useBlocker } from 'react-router'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Link from '@tiptap/extension-link'
-import Placeholder from '@tiptap/extension-placeholder'
-import Typography from '@tiptap/extension-typography'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
-import { WikiLinkSuggestion } from './extensions/wiki-link-suggestion'
-import { suggestionRenderer } from './extensions/suggestion-renderer'
+import { useCreateBlockNote } from '@blocknote/react'
+import { BlockNoteView } from '@blocknote/shadcn'
+import '@blocknote/shadcn/style.css'
 import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
 import { Link as RouterLink } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -30,11 +24,11 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { EditorToolbar } from './editor-toolbar'
 import { TagInput } from './tag-input'
 import { useCreateNote, useUpdateNote } from '@/hooks/use-notes'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useAutosave, loadDraft, clearDraft } from '@/hooks/use-autosave'
+import { parseStoredContent, serializeEditorContent } from '@/lib/blocknote'
 import { toast } from 'sonner'
 import type { Note, NoteType, SourceType } from '@/api/types'
 
@@ -58,9 +52,8 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const createNote = useCreateNote()
   const updateNote = useUpdateNote()
   const savedRef = useRef(false)
+  const contentLoadedRef = useRef(false)
 
-  // Load draft if available (for new notes only -- we don't save drafts
-  // for existing notes, so there's nothing to restore for them)
   const draft = !note ? loadDraft(undefined) : null
 
   const initialTitle = draft?.title ?? note?.title ?? ''
@@ -77,7 +70,6 @@ export function NoteEditor({ note }: NoteEditorProps) {
   const [sourceYear, setSourceYear] = useState(note?.sourceYear?.toString() ?? '')
   const [sourceType, setSourceType] = useState<SourceType | ''>(note?.sourceType ?? '')
 
-  // Notify user if a draft was restored
   const draftNotifiedRef = useRef(false)
   useEffect(() => {
     if (draft && !draftNotifiedRef.current) {
@@ -86,40 +78,76 @@ export function NoteEditor({ note }: NoteEditorProps) {
     }
   }, [draft])
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Link.configure({ openOnClick: false }),
-      Placeholder.configure({ placeholder: 'Start writing...' }),
-      Typography,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      WikiLinkSuggestion.configure({
-        suggestion: {
-          render: suggestionRenderer,
-        },
-      }),
-    ],
-    content: initialContent,
-  })
+  const editor = useCreateBlockNote()
 
-  const editorContent = editor?.getHTML() ?? ''
+  // Load initial HTML content into BlockNote
+  useEffect(() => {
+    if (!editor || contentLoadedRef.current) return
+    if (initialContent) {
+      contentLoadedRef.current = true
+      parseStoredContent(editor, initialContent)
+    }
+  }, [editor, initialContent])
 
-  // Only autosave for new notes (not existing notes, to keep it simple)
+  // Track HTML for autosave — serialize on demand, not on every keystroke
+  const getHtmlContent = useCallback(async () => {
+    if (!editor) return ''
+    return serializeEditorContent(editor)
+  }, [editor])
+
+  // Autosave for new notes
   const { draftSavedRecently } = useAutosave(
     note ? '__skip__' : undefined,
     note ? '' : title,
-    note ? '' : editorContent,
+    note ? '' : getHtmlContent,
     note ? [] : tags,
   )
+
+  // Autosave for existing notes (debounced)
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
+  const [lastSavedContent, setLastSavedContent] = useState(initialContent)
+
+  const autosaveExisting = useCallback(async () => {
+    if (!note || !editor || savedRef.current) return
+    const html = await serializeEditorContent(editor)
+    if (html === lastSavedContent && title === note.title && JSON.stringify(tags) === JSON.stringify(note.tags.map(t => t.tag))) return
+
+    updateNote.mutate(
+      {
+        id: note.id,
+        title: title.trim() || note.title,
+        content: html,
+        tags,
+        noteType,
+      },
+      {
+        onSuccess: () => {
+          setLastSavedContent(html)
+          toast.success('Auto-saved', { duration: 1500 })
+        },
+      },
+    )
+  }, [note, editor, title, tags, noteType, lastSavedContent, updateNote])
+
+  // Debounced autosave for existing notes
+  useEffect(() => {
+    if (!note || !editor) return
+    const handler = () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = setTimeout(autosaveExisting, 1200)
+    }
+    editor.onEditorContentChange(handler)
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
+    }
+  }, [note, editor, autosaveExisting])
 
   const [editorDirty, setEditorDirty] = useState(false)
 
   useEffect(() => {
     if (!editor) return
     const handler = () => setEditorDirty(true)
-    editor.on('update', handler)
-    return () => { editor.off('update', handler) }
+    editor.onEditorContentChange(handler)
   }, [editor])
 
   const isDirty =
@@ -131,9 +159,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
   const blocker = useBlocker(isDirty)
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!editor) return
-    const content = editor.getHTML()
+    const content = await serializeEditorContent(editor)
 
     if (!title.trim()) {
       toast.error('Title is required')
@@ -327,11 +355,10 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
       <Separator className="my-4" />
 
-      {editor && <EditorToolbar editor={editor} />}
-
-      <div className="prose prose-stone mt-4 max-w-none">
-        <EditorContent editor={editor} />
-      </div>
+      <BlockNoteView
+        editor={editor}
+        theme="dark"
+      />
 
       <AlertDialog open={blocker.state === 'blocked'}>
         <AlertDialogContent>
