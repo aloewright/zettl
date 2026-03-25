@@ -24,7 +24,7 @@ import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
-import { gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
+import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
 
 const app = new Hono<HonoEnv>()
 
@@ -105,21 +105,37 @@ app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() })
 app.get('/api/diag/ai', async (c) => {
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
-  // Test A: chat via compat endpoint (dynamic/text_gen)
+  // Test A: dynamic/text_gen via compat endpoint
   try {
-    const chatRes = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
-      c.env,
-      '/chat/completions',
-      {
-        model: 'dynamic/text_gen',
-        messages: [{ role: 'user', content: 'Say ok' }],
-        max_tokens: 5,
-      },
-    )
-    results.A_chat = { ok: true, content: chatRes?.choices?.[0]?.message?.content }
-  } catch (err) { results.A_chat = { ok: false, error: String(err) } }
+    const url = `${GATEWAY_BASE}/compat/chat/completions`
+    const headers = gatewayHeaders(c.env)
+    const body = { model: 'dynamic/text_gen', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    const raw = await res.text()
+    if (!res.ok) {
+      results.A_dynamic = { ok: false, status: res.status, error: raw.slice(0, 500) }
+    } else {
+      const data = JSON.parse(raw)
+      results.A_dynamic = { ok: true, content: data?.choices?.[0]?.message?.content }
+    }
+  } catch (err) { results.A_dynamic = { ok: false, error: String(err) } }
 
-  // Test B: embedding via env.AI.run() with gateway
+  // Test B: workers-ai/ via compat endpoint
+  try {
+    const url = `${GATEWAY_BASE}/compat/chat/completions`
+    const headers = gatewayHeaders(c.env)
+    const body = { model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    const raw = await res.text()
+    if (!res.ok) {
+      results.B_workersai = { ok: false, status: res.status, error: raw.slice(0, 500) }
+    } else {
+      const data = JSON.parse(raw)
+      results.B_workersai = { ok: true, content: data?.choices?.[0]?.message?.content }
+    }
+  } catch (err) { results.B_workersai = { ok: false, error: String(err) } }
+
+  // Test C: embedding via env.AI.run() with gateway
   try {
     const embedResult = await c.env.AI.run(
       '@cf/baai/bge-large-en-v1.5',
@@ -127,8 +143,11 @@ app.get('/api/diag/ai', async (c) => {
       AI_GATEWAY_OPTS,
     ) as { data?: number[][] }
     const dims = embedResult?.data?.[0]?.length ?? 0
-    results.B_embed = { ok: dims > 0, dims }
-  } catch (err) { results.B_embed = { ok: false, error: String(err) } }
+    results.C_embed = { ok: dims > 0, dims }
+  } catch (err) { results.C_embed = { ok: false, error: String(err) } }
+
+  // Debug: show if CF_AIG_TOKEN is set
+  results.hasToken = !!c.env.CF_AIG_TOKEN
 
   return c.json(results)
 })
