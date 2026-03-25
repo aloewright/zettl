@@ -9,6 +9,7 @@
     "build": "cd ../zettel-web-ui && npm ci && npm run build"
   },
   "dependencies": {
+    "@blocknote/xl-ai": "^0.47.2",
     "@cloudflare/ai-chat": "^0.2.5",
     "@cloudflare/puppeteer": "^1.0.6",
     "agents": "^0.8.4",
