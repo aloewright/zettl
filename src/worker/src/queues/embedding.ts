@@ -48,8 +48,8 @@ export async function handleEmbedMessage(
       embedStatus: 'Done',
       embedError: null,
       embedUpdatedAt: isoNow(),
-      // Must match the model behind ai_embed gateway route (2056-dim output)
-      embeddingModel: 'pplx-embed-context-v1-4b',
+      // Model behind ai_embed gateway route; dims truncated to 1536 for Vectorize
+      embeddingModel: 'ai-gateway/ai_embed',
       embedRetryCount: 0,
     }).where(eq(notes.id, noteId))
 

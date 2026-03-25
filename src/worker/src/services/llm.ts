@@ -1,5 +1,5 @@
 import type { Env } from '../types'
-import { gatewayRun, getGatewayBaseUrl, gatewayHeaders } from './gateway'
+import { GATEWAY_BASE, gatewayHeaders } from './gateway'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,13 +24,42 @@ interface ChatCompletionOptions {
   responseFormat?: { type: 'json_object' | 'text' }
 }
 
-// ── Chat completion (non-streaming, uses pre-authenticated binding) ──────────
+// ── Gateway chat helper ─────────────────────────────────────────────────────
+
+async function gatewayChat(
+  env: Env,
+  route: string,
+  messages: Array<{ role: string; content: string }>,
+  opts: { maxTokens: number; temperature: number; stream?: boolean },
+): Promise<Response> {
+  const url = `${GATEWAY_BASE}/compat/chat/completions`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: gatewayHeaders(env),
+    body: JSON.stringify({
+      model: `dynamic/${route}`,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      ...(opts.stream ? { stream: true } : {}),
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`AI Gateway [${route}] ${res.status}: ${errText}`)
+  }
+
+  return res
+}
+
+// ── Chat completion (non-streaming) ──────────────────────────────────────────
 
 export async function chatCompletion(
   env: Env,
   opts: ChatCompletionOptions,
 ): Promise<string> {
-  // Add JSON hint if needed
   let messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
   if (opts.responseFormat?.type === 'json_object') {
     const hasJsonHint = messages.some(m =>
@@ -44,48 +73,35 @@ export async function chatCompletion(
     }
   }
 
-  const result = await gatewayRun(env, 'compat', 'chat/completions', {
-    model: 'dynamic/text_gen',
-    messages,
-    max_tokens: opts.maxTokens ?? 2000,
+  const res = await gatewayChat(env, 'text_gen', messages, {
+    maxTokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
-  }) as { choices?: Array<{ message?: { content?: string } }> }
+  })
 
-  const text = result?.choices?.[0]?.message?.content ?? ''
+  const data = await res.json<{ choices?: Array<{ message?: { content?: string } }> }>()
+  const text = data.choices?.[0]?.message?.content ?? ''
   if (!text) throw new Error('Empty response from AI Gateway text_gen')
   return text
 }
 
-// ── Chat completion (SSE streaming, uses fetch) ──────────────────────────────
+// ── Chat completion (SSE streaming) ──────────────────────────────────────────
 
 export async function chatCompletionStream(
   env: Env,
   opts: ChatCompletionOptions,
 ): Promise<ReadableStream> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
-  const baseUrl = getGatewayBaseUrl()
 
-  const res = await fetch(`${baseUrl}/compat/chat/completions`, {
-    method: 'POST',
-    headers: gatewayHeaders(env),
-    body: JSON.stringify({
-      model: 'dynamic/text_gen',
-      messages,
-      max_tokens: opts.maxTokens ?? 2000,
-      temperature: opts.temperature ?? 0.7,
-      stream: true,
-    }),
+  const res = await gatewayChat(env, 'text_gen', messages, {
+    maxTokens: opts.maxTokens ?? 2000,
+    temperature: opts.temperature ?? 0.7,
+    stream: true,
   })
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`AI Gateway [text_gen] stream ${res.status}: ${errText}`)
-  }
 
   return res.body!
 }
 
-// ── Research completion (via research_gen / Perplexity, pre-authenticated) ───
+// ── Research completion (Perplexity via research_gen) ─────────────────────────
 
 export async function researchCompletion(
   env: Env,
@@ -93,17 +109,17 @@ export async function researchCompletion(
 ): Promise<{ text: string; citations: string[] }> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
 
-  const result = await gatewayRun(env, 'compat', 'chat/completions', {
-    model: 'dynamic/research_gen',
-    messages,
-    max_tokens: opts.maxTokens ?? 1500,
+  const res = await gatewayChat(env, 'research_gen', messages, {
+    maxTokens: opts.maxTokens ?? 1500,
     temperature: opts.temperature ?? 0.3,
-  }) as {
+  })
+
+  const data = await res.json<{
     choices?: Array<{ message?: { content?: string } }>
     citations?: string[]
-  }
+  }>()
 
-  const text = result?.choices?.[0]?.message?.content ?? ''
-  const citations = result?.citations ?? []
+  const text = data.choices?.[0]?.message?.content ?? ''
+  const citations = data.citations ?? []
   return { text, citations }
 }
