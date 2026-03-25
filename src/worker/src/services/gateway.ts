@@ -4,8 +4,7 @@
  * ALL AI calls go through AI Gateway "x" with unified billing.
  * No provider API keys needed — Cloudflare bills the account directly.
  *
- * Dynamic routes: fetch() → /dynamic/{routeName}/... endpoint
- * Compat routes:  fetch() → /compat/... endpoint with provider/model in body
+ * Chat/LLM: fetch() → /compat/... endpoint with model: "dynamic/{routeName}" in body
  * Embeddings/Audio: env.AI.run() with { gateway: { id: GATEWAY_ID } }
  *
  * Both approaches route through AI Gateway and use unified billing.
@@ -39,15 +38,11 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * Determine the full gateway endpoint URL for a given model and request path.
+ * Build the compat endpoint URL.
  *
- * Dynamic models whose identifier starts with `"dynamic/"` are routed to
- * `/dynamic/{routeName}{path}` (where `routeName` is the substring after the prefix).
- * All other models are routed to `/compat{path}`.
- *
- * @param model - Model identifier; use the prefix `dynamic/` to target a dynamic route, otherwise a compat route is used
- * @param path - Request path to append to the selected gateway route (should begin with `/` when needed)
- * @returns The complete gateway URL including the base, selected route segment, and the provided path
+ * All fetch-based AI calls use the compat endpoint. Dynamic routes are selected
+ * by setting `model: "dynamic/{routeName}"` in the request body — the gateway
+ * parses that field and routes to the configured provider/model automatically.
  */
 function buildGatewayUrl(model: string, path: string): string {
   if (!model || typeof model !== 'string') {
@@ -58,16 +53,15 @@ function buildGatewayUrl(model: string, path: string): string {
     if (!routeName) {
       throw new Error('AI Gateway: dynamic route name is empty (model="dynamic/")')
     }
-    return `${GATEWAY_BASE}/dynamic/${routeName}${path}`
   }
   return `${GATEWAY_BASE}/compat${path}`
 }
 
 /**
- * Send a POST request to the Cloudflare AI Gateway and return the raw Response.
+ * Send a POST request to the Cloudflare AI Gateway compat endpoint and return the raw Response.
  *
- * The request is routed based on `body.model`: models starting with `dynamic/` are sent to
- * `/dynamic/{routeName}{path}`, all other models are sent to `/compat{path}`.
+ * All requests go to `/compat{path}`. Dynamic routes are selected via the `model` field
+ * in the body (e.g., `model: "dynamic/text_gen"`) — the gateway handles routing internally.
  *
  * @param env - Worker environment bindings used to build headers and gateway URL
  * @param path - Path suffix to append to the selected gateway endpoint
