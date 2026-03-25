@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { routeAgentRequest } from 'agents'
 import type { HonoEnv, Env, EmbedQueueMessage, EnrichQueueMessage } from './types'
 import { dbMiddleware, authMiddleware } from './middleware/auth'
 import notesRouter from './routes/notes'
@@ -192,8 +193,18 @@ async function scheduled(
   }
 }
 
+// Re-export ChatAgent so Durable Objects runtime can find it
+export { ChatAgent } from './chat-agent'
+
 export default {
-  fetch: app.fetch,
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // Route /agents/* requests to the Cloudflare Agents SDK (Durable Objects)
+    const agentResponse = await routeAgentRequest(request, env)
+    if (agentResponse) return agentResponse
+
+    // All other requests handled by Hono
+    return app.fetch(request, env, ctx)
+  },
   queue,
   scheduled,
 }
