@@ -625,6 +625,36 @@ router.put('/pieces/:id/reject', async (c) => {
   return c.json({ success: true })
 })
 
+// PUT /api/content/pieces/:id/schedule — schedule a piece for a specific date
+router.put('/pieces/:id/schedule', async (c) => {
+  const db = c.get('db')
+  const id = c.req.param('id')
+  const body = await c.req.json<{ scheduledAt: string | null }>()
+
+  const [existing] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
+  if (!existing) return c.json({ error: 'Not found' }, 404)
+
+  await db.update(contentPieces).set({
+    scheduledAt: body.scheduledAt,
+  }).where(eq(contentPieces.id, id))
+
+  const [updated] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
+  return c.json(updated)
+})
+
+// GET /api/content/pieces/scheduled — get all scheduled pieces
+router.get('/pieces/scheduled', async (c) => {
+  const db = c.get('db')
+  const rows = await db.select().from(contentPieces)
+    .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
+    .orderBy(contentPieces.scheduledAt)
+
+  return c.json(rows.map(r => ({
+    ...r,
+    generatedTags: parseTags(r.generatedTags),
+  })))
+})
+
 // GET /api/content/pieces/:id/export — markdown export
 router.get('/pieces/:id/export', async (c) => {
   const db = c.get('db')

@@ -25,6 +25,7 @@ import { relativeDate } from '@/lib/format'
 import * as contentApi from '@/api/content'
 import { ApiError } from '@/api/client'
 import { usePublishToSubstack } from '@/hooks/use-substack'
+import { ScheduleCalendar } from '@/components/schedule-calendar'
 import type {
   ContentGeneration,
   ContentPiece,
@@ -670,6 +671,15 @@ export function ContentReviewPage() {
           </Button>
         ))}
       </div>
+
+      {/* Scheduling calendar — shown when Approved filter active */}
+      {filter === 'Approved' && (
+        <ScheduleCalendar
+          approvedPieces={generations.flatMap(g =>
+            (g.pieces ?? []).filter(p => p.status === 'Approved')
+          )}
+        />
+      )}
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
