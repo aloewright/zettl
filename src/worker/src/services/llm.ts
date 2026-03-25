@@ -1,5 +1,5 @@
 import type { Env } from '../types'
-import { getOptionalSecret } from '../types'
+import { GATEWAY_BASE, gatewayHeaders } from './gateway'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -9,11 +9,6 @@ export function stripCodeFences(text: string): string {
   const match = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/)
   return match?.[1]?.trim() ?? trimmed
 }
-
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
-const GATEWAY_ID = 'x'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,15 +32,9 @@ async function gatewayChat(
   messages: Array<{ role: string; content: string }>,
   opts: { maxTokens: number; temperature: number; stream?: boolean },
 ): Promise<Response> {
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/chat/completions`
-  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
-
-  const res = await fetch(gatewayUrl, {
+  const res = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(cfToken ? { 'cf-aig-authorization': `Bearer ${cfToken}` } : {}),
-    },
+    headers: gatewayHeaders(env),
     body: JSON.stringify({
       model: `dynamic/${route}`,
       messages,
@@ -109,4 +98,27 @@ export async function chatCompletionStream(
   })
 
   return res.body!
+}
+
+// ── Research completion (via research_gen / Perplexity) ──────────────────────
+
+export async function researchCompletion(
+  env: Env,
+  opts: ChatCompletionOptions,
+): Promise<{ text: string; citations: string[] }> {
+  const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
+
+  const res = await gatewayChat(env, 'research_gen', messages, {
+    maxTokens: opts.maxTokens ?? 1500,
+    temperature: opts.temperature ?? 0.3,
+  })
+
+  const data = await res.json<{
+    choices?: Array<{ message?: { content?: string } }>
+    citations?: string[]
+  }>()
+
+  const text = data.choices?.[0]?.message?.content ?? ''
+  const citations = data.citations ?? []
+  return { text, citations }
 }

@@ -9,9 +9,7 @@ router.post('/', async (c) => {
   const body = await c.req.json<{
     text: string
     voice?: string
-    model?: string
     speed?: number
-    language?: string
   }>().catch(() => null)
 
   if (!body?.text) return c.json({ error: 'text is required' }, 400)
@@ -20,9 +18,7 @@ router.post('/', async (c) => {
     const audio = await textToSpeech(c.env, {
       text: body.text,
       voice: body.voice,
-      model: body.model,
       speed: body.speed,
-      language: body.language,
     })
 
     return new Response(audio, {

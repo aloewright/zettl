@@ -7,7 +7,7 @@ export interface Env {
   vector_db: VectorizeIndex
   CF_AI_GATEWAY_URL?: string // plain env var (not sensitive)
   CF_ACCESS_TEAM?: string // Cloudflare Access team domain (optional override)
-  CF_AIG_TOKEN?: string | SecretsStoreSecret  // AI Gateway auth token (secret or Secrets Store binding)
+  CF_AIG_TOKEN?: string       // AI Gateway auth token — wrangler secret (plain string at runtime)
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding

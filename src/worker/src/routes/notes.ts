@@ -180,21 +180,21 @@ router.post('/check-duplicate', async (c) => {
 router.post('/re-embed', async (c) => {
   const db = c.get('db')
 
-  const staleNotes = await db.select({ id: notes.id })
+  // Pick up ALL notes regardless of current embed status
+  const allNotes = await db.select({ id: notes.id })
     .from(notes)
-    .where(eq(notes.embedStatus, 'Done'))
 
-  if (!staleNotes.length) return c.json({ queued: 0 })
+  if (!allNotes.length) return c.json({ queued: 0 })
 
+  // Mark all as Stale so they get re-processed
   await db.update(notes)
     .set({ embedStatus: 'Stale' })
-    .where(eq(notes.embedStatus, 'Done'))
 
-  for (const n of staleNotes) {
+  for (const n of allNotes) {
     await c.env.EMBED_QUEUE.send({ noteId: n.id })
   }
 
-  return c.json({ queued: staleNotes.length })
+  return c.json({ queued: allNotes.length })
 })
 
 // ── Single note ────────────────────────────────────────────────────────────────

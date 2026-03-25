@@ -34,9 +34,16 @@ Project-level instructions that override or extend global defaults.
 
 ### Key files
 
-- `src/worker/src/services/llm.ts` — `gatewayChat()` for text_gen / research_gen
+- `src/worker/src/services/gateway.ts` — **Centralized** gateway config, `gatewayFetch()`, `gatewayHeaders()` (single source of truth for ACCOUNT_ID, GATEWAY_ID, auth)
+- `src/worker/src/services/llm.ts` — `chatCompletion()`, `chatCompletionStream()`, `researchCompletion()` for text_gen / research_gen
 - `src/worker/src/services/embeddings.ts` — `generateEmbeddingAI()` for ai_embed
 - `src/worker/src/services/audio.ts` — `textToSpeech()` / `speechToText()` for audio_gen / stt_gen
+- `src/worker/src/services/mcp.ts` — Composio MCP client: `mcpCall()`, `listMcpTools()`, `callMcpTool()` (SSE-aware)
+
+### Auth
+
+- `CF_AIG_TOKEN` is a **wrangler secret** (plain string, NOT SecretsStoreSecret) — set via `wrangler secret put CF_AIG_TOKEN`
+- Read directly as `env.CF_AIG_TOKEN` — do NOT use `getOptionalSecret()` (that's for SecretsStoreSecret bindings only)
 
 ---
 

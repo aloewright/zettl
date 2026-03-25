@@ -3,30 +3,20 @@ import type { Context } from 'hono'
 import { eq, desc, and, sql, inArray } from 'drizzle-orm'
 import type { HonoEnv, Env } from '../types'
 import { makeId, isoNow } from '../types'
-import { stripCodeFences } from '../services/llm'
+import { stripCodeFences, chatCompletion, researchCompletion } from '../services/llm'
 import { researchAgendas, researchTasks, researchFindings, notes } from '../db/schema'
 import { createDb } from '../db/client'
-import { chatCompletion } from '../services/llm'
-import { getOptionalSecret } from '../types'
 
 const router = new Hono<HonoEnv>()
 
 // ── Research execution ──────────────────────────────────────────────────────
-
-// ── Perplexity via AI Gateway (research_gen route) ──────────────────────────
-
-const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
-const GATEWAY_ID = 'x'
 
 async function perplexitySearch(
   env: Env,
   query: string,
   motivation: string,
 ): Promise<{ text: string; citations: string[] }> {
-  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/chat/completions`
-
-  const body = {
-    model: 'dynamic/research_gen',
+  return researchCompletion(env, {
     messages: [
       {
         role: 'system',
@@ -47,34 +37,9 @@ Always respond with valid JSON.`,
         content: `Research query: ${query}\nMotivation: ${motivation}`,
       },
     ],
-    max_tokens: 1500,
+    maxTokens: 1500,
     temperature: 0.3,
-  }
-
-  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
-
-  const res = await fetch(gatewayUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(cfToken ? { 'cf-aig-authorization': `Bearer ${cfToken}` } : {}),
-    },
-    body: JSON.stringify(body),
   })
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`Perplexity via AI Gateway failed (${res.status}): ${errText}`)
-  }
-
-  const data = await res.json<{
-    choices?: Array<{ message?: { content?: string } }>
-    citations?: string[]
-  }>()
-
-  const text = data.choices?.[0]?.message?.content ?? ''
-  const citations = data.citations ?? []
-  return { text, citations }
 }
 
 async function executeTask(
