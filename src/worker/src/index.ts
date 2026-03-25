@@ -24,6 +24,7 @@ import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
+import { gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
 
 const app = new Hono<HonoEnv>()
 
@@ -102,69 +103,32 @@ app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() })
 
 // ── AI Diagnostics (GET /api/diag/ai) ───────────────────────────────────────
 app.get('/api/diag/ai', async (c) => {
-  const GW = 'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x'
-  const token = c.env.CF_AIG_TOKEN ?? ''
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
-  // Helper: read response body by consuming the stream manually
-  async function readBody(res: Response): Promise<string> {
-    if (!res.body) return '(no body)'
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let result = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      result += decoder.decode(value, { stream: true })
-    }
-    result += decoder.decode()
-    return result
-  }
-
-  // Test A: compat with dynamic/text_gen
+  // Test A: chat via compat endpoint (workers-ai/ prefix)
   try {
-    const res = await fetch(`${GW}/compat/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
-      body: JSON.stringify({ model: 'dynamic/text_gen', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
-    })
-    const body = await readBody(res)
-    results.A_dynamic = { status: res.status, bodyLen: body.length, model: res.headers.get('cf-aig-model'), provider: res.headers.get('cf-aig-provider'), preview: body.slice(0, 300) }
-  } catch (err) { results.A_dynamic = { error: String(err) } }
+    const chatRes = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
+      c.env,
+      '/chat/completions',
+      {
+        model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        messages: [{ role: 'user', content: 'Say ok' }],
+        max_tokens: 5,
+      },
+    )
+    results.A_chat = { ok: true, content: chatRes?.choices?.[0]?.message?.content }
+  } catch (err) { results.A_chat = { ok: false, error: String(err) } }
 
-  // Test B: compat with explicit workers-ai model
+  // Test B: embedding via env.AI.run() with gateway
   try {
-    const res = await fetch(`${GW}/compat/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
-      body: JSON.stringify({ model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
-    })
-    const body = await readBody(res)
-    results.B_workersai_compat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 300) }
-  } catch (err) { results.B_workersai_compat = { error: String(err) } }
-
-  // Test C: compat with explicit cerebras model (what dynamic resolves to)
-  try {
-    const res = await fetch(`${GW}/compat/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
-      body: JSON.stringify({ model: 'cerebras/zai-glm-4.7', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
-    })
-    const body = await readBody(res)
-    results.C_cerebras_compat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 300) }
-  } catch (err) { results.C_cerebras_compat = { error: String(err) } }
-
-  // Test D: compat embed with dynamic/ai_embed
-  try {
-    const res = await fetch(`${GW}/compat/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
-      body: JSON.stringify({ model: 'dynamic/ai_embed', input: 'test' }),
-    })
-    const body = await readBody(res)
-    let dims = 0; try { dims = JSON.parse(body)?.data?.[0]?.embedding?.length ?? 0 } catch {}
-    results.D_embed_dynamic = { status: res.status, bodyLen: body.length, dims, preview: body.slice(0, 300) }
-  } catch (err) { results.D_embed_dynamic = { error: String(err) } }
+    const embedResult = await c.env.AI.run(
+      '@cf/baai/bge-large-en-v1.5',
+      { text: ['test embedding'] },
+      AI_GATEWAY_OPTS,
+    ) as { data?: number[][] }
+    const dims = embedResult?.data?.[0]?.length ?? 0
+    results.B_embed = { ok: dims > 0, dims }
+  } catch (err) { results.B_embed = { ok: false, error: String(err) } }
 
   return c.json(results)
 })

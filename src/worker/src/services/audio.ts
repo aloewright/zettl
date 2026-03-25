@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import { AI_GATEWAY_OPTS } from './gateway'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,27 +21,30 @@ export interface TranscriptionResult {
   segments?: { start: number; end: number; text: string }[]
 }
 
-// ── Text-to-Speech via Workers AI ────────────────────────────────────────────
+// ── Text-to-Speech via Workers AI (routed through AI Gateway) ────────────────
 
 export async function textToSpeech(
   env: Env,
   opts: TTSOptions,
 ): Promise<ArrayBuffer> {
-  // Use Workers AI directly for TTS — reliable, pre-authenticated
-  const result = await env.AI.run('@cf/myshell/melotts-v2' as any, {
-    prompt: opts.text,
-  })
+  const result = await env.AI.run(
+    '@cf/myshell/melotts-v2' as any,
+    { prompt: opts.text },
+    AI_GATEWAY_OPTS,
+  )
   return result as unknown as ArrayBuffer
 }
 
-// ── Speech-to-Text via Workers AI ────────────────────────────────────────────
+// ── Speech-to-Text via Workers AI (routed through AI Gateway) ────────────────
 
 export async function speechToText(
   env: Env,
   opts: STTOptions,
 ): Promise<TranscriptionResult> {
-  const result = await env.AI.run('@cf/openai/whisper' as any, {
-    audio: [...new Uint8Array(opts.audio)],
-  }) as { text?: string }
+  const result = await env.AI.run(
+    '@cf/openai/whisper' as any,
+    { audio: [...new Uint8Array(opts.audio)] },
+    AI_GATEWAY_OPTS,
+  ) as { text?: string }
   return { text: result?.text ?? '' }
 }

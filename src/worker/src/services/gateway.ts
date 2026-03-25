@@ -1,11 +1,13 @@
 /**
  * Centralized AI Gateway configuration.
  *
- * ALL AI calls go through AI Gateway "x" via the compat endpoint.
- * Uses workers-ai/ prefix for models (no API keys needed).
+ * ALL AI calls go through AI Gateway "x" with unified billing.
+ * No provider API keys needed — Cloudflare bills the account directly.
  *
- * When dynamic route API keys are fixed in the dashboard,
- * switch model names back to dynamic/text_gen, dynamic/ai_embed, etc.
+ * Chat/LLM: fetch() → compat endpoint with workers-ai/ prefix
+ * Embeddings/Audio: env.AI.run() with { gateway: { id: GATEWAY_ID } }
+ *
+ * Both approaches route through AI Gateway and use unified billing.
  */
 
 import type { Env } from '../types'
@@ -14,8 +16,11 @@ export const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
 export const GATEWAY_ID = 'x'
 export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}`
 
+/** Options to pass to env.AI.run() to route through AI Gateway. */
+export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
+
 /**
- * Build gateway auth headers.
+ * Build gateway auth headers for fetch-based calls.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
