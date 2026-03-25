@@ -1,5 +1,5 @@
 import type { Env } from '../types'
-import { getGatewayUrl, gatewayHeaders } from './gateway'
+import { gatewayRun, getGatewayBaseUrl, gatewayHeaders } from './gateway'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,36 +24,7 @@ interface ChatCompletionOptions {
   responseFormat?: { type: 'json_object' | 'text' }
 }
 
-// ── AI Gateway helper ────────────────────────────────────────────────────────
-
-async function gatewayChat(
-  env: Env,
-  route: string,
-  messages: Array<{ role: string; content: string }>,
-  opts: { maxTokens: number; temperature: number; stream?: boolean },
-): Promise<Response> {
-  const baseUrl = await getGatewayUrl(env)
-  const res = await fetch(`${baseUrl}/compat/chat/completions`, {
-    method: 'POST',
-    headers: gatewayHeaders(env),
-    body: JSON.stringify({
-      model: `dynamic/${route}`,
-      messages,
-      max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
-      ...(opts.stream ? { stream: true } : {}),
-    }),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`AI Gateway [${route}] ${res.status}: ${errText}`)
-  }
-
-  return res
-}
-
-// ── Chat completion (non-streaming) ──────────────────────────────────────────
+// ── Chat completion (non-streaming, uses pre-authenticated binding) ──────────
 
 export async function chatCompletion(
   env: Env,
@@ -73,35 +44,48 @@ export async function chatCompletion(
     }
   }
 
-  const res = await gatewayChat(env, 'text_gen', messages, {
-    maxTokens: opts.maxTokens ?? 2000,
+  const result = await gatewayRun(env, 'compat', 'chat/completions', {
+    model: 'dynamic/text_gen',
+    messages,
+    max_tokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
-  })
+  }) as { choices?: Array<{ message?: { content?: string } }> }
 
-  const data = await res.json<{ choices?: Array<{ message?: { content?: string } }> }>()
-  const text = data.choices?.[0]?.message?.content ?? ''
+  const text = result?.choices?.[0]?.message?.content ?? ''
   if (!text) throw new Error('Empty response from AI Gateway text_gen')
   return text
 }
 
-// ── Chat completion (SSE streaming) ──────────────────────────────────────────
+// ── Chat completion (SSE streaming, uses fetch) ──────────────────────────────
 
 export async function chatCompletionStream(
   env: Env,
   opts: ChatCompletionOptions,
 ): Promise<ReadableStream> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
+  const baseUrl = getGatewayBaseUrl()
 
-  const res = await gatewayChat(env, 'text_gen', messages, {
-    maxTokens: opts.maxTokens ?? 2000,
-    temperature: opts.temperature ?? 0.7,
-    stream: true,
+  const res = await fetch(`${baseUrl}/compat/chat/completions`, {
+    method: 'POST',
+    headers: gatewayHeaders(env),
+    body: JSON.stringify({
+      model: 'dynamic/text_gen',
+      messages,
+      max_tokens: opts.maxTokens ?? 2000,
+      temperature: opts.temperature ?? 0.7,
+      stream: true,
+    }),
   })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`AI Gateway [text_gen] stream ${res.status}: ${errText}`)
+  }
 
   return res.body!
 }
 
-// ── Research completion (via research_gen / Perplexity) ──────────────────────
+// ── Research completion (via research_gen / Perplexity, pre-authenticated) ───
 
 export async function researchCompletion(
   env: Env,
@@ -109,17 +93,17 @@ export async function researchCompletion(
 ): Promise<{ text: string; citations: string[] }> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
 
-  const res = await gatewayChat(env, 'research_gen', messages, {
-    maxTokens: opts.maxTokens ?? 1500,
+  const result = await gatewayRun(env, 'compat', 'chat/completions', {
+    model: 'dynamic/research_gen',
+    messages,
+    max_tokens: opts.maxTokens ?? 1500,
     temperature: opts.temperature ?? 0.3,
-  })
-
-  const data = await res.json<{
+  }) as {
     choices?: Array<{ message?: { content?: string } }>
     citations?: string[]
-  }>()
+  }
 
-  const text = data.choices?.[0]?.message?.content ?? ''
-  const citations = data.citations ?? []
+  const text = result?.choices?.[0]?.message?.content ?? ''
+  const citations = result?.citations ?? []
   return { text, citations }
 }

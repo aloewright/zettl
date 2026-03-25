@@ -21,12 +21,8 @@ export interface TranscriptionResult {
   segments?: { start: number; end: number; text: string }[]
 }
 
-// ── Text-to-Speech ──────────────────────────────────────────────────────────
+// ── Text-to-Speech (uses fetch — needs raw audio response) ──────────────────
 
-/**
- * Generate speech audio from text via AI Gateway audio_gen route.
- * Uses unified billing — gateway selects the provider.
- */
 export async function textToSpeech(
   env: Env,
   opts: TTSOptions,
@@ -44,12 +40,8 @@ export async function textToSpeech(
   return res.arrayBuffer()
 }
 
-// ── Speech-to-Text ──────────────────────────────────────────────────────────
+// ── Speech-to-Text (uses fetch — sends raw audio binary) ────────────────────
 
-/**
- * Transcribe audio to text via AI Gateway stt_gen route.
- * Uses unified billing — gateway selects the provider.
- */
 export async function speechToText(
   env: Env,
   opts: STTOptions,

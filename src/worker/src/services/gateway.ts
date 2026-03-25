@@ -1,19 +1,12 @@
 /**
- * Centralized AI Gateway configuration and fetch helper.
+ * Centralized AI Gateway configuration.
  *
- * ALL AI calls MUST go through AI Gateway "x" with unified billing.
- * Uses the Workers AI binding (env.AI) which is pre-authenticated —
- * no cf-aig-authorization header needed when using binding methods.
+ * ALL AI calls go through AI Gateway "x" using the Workers AI binding (env.AI).
+ * The binding's gateway().run() method is pre-authenticated — no tokens needed.
  *
- * For streaming/compat endpoints we use fetch to the gateway URL,
- * falling back to cf-aig-authorization + Authorization headers.
- *
- * Dynamic routes:
- *   text_gen      → /compat/chat/completions  (LLM chat/content generation)
- *   research_gen  → /compat/chat/completions  (Perplexity research)
- *   audio_gen     → /compat/audio/speech      (Text-to-speech)
- *   stt_gen       → /compat/audio/transcriptions (Speech-to-text)
- *   ai_embed      → /compat/embeddings        (Text embeddings, 2056-dim)
+ * For streaming we still use fetch() to the compat endpoint. The CF_AIG_TOKEN
+ * wrangler secret should be an AI Gateway authentication token (created from
+ * the AI Gateway dashboard > Settings > Create authentication token).
  */
 
 import type { Env } from '../types'
@@ -21,23 +14,30 @@ import type { Env } from '../types'
 export const GATEWAY_ID = 'x'
 
 /**
- * Get the AI Gateway base URL using the AI binding.
- * Pre-authenticated when called from a Worker.
+ * Execute a non-streaming AI Gateway request via the pre-authenticated binding.
+ * This is the preferred method — no tokens or headers needed.
  */
-export async function getGatewayUrl(env: Env): Promise<string> {
-  try {
-    const url = await env.AI.gateway(GATEWAY_ID).getUrl()
-    return url
-  } catch {
-    // Fallback for local dev or if binding isn't available
-    return 'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x'
-  }
+export async function gatewayRun(
+  env: Env,
+  provider: string,
+  endpoint: string,
+  body: Record<string, unknown>,
+  extraHeaders?: Record<string, string>,
+): Promise<unknown> {
+  const gateway = env.AI.gateway(GATEWAY_ID)
+  const response = await gateway.run({
+    provider,
+    endpoint,
+    headers: extraHeaders ?? {},
+    query: body,
+  })
+  return response
 }
 
 /**
- * Build standard AI Gateway request headers.
- * When using the AI binding's getUrl(), auth is handled by the binding.
- * We also send cf-aig-authorization + Authorization as belt-and-suspenders.
+ * Build AI Gateway auth headers for fetch-based requests (streaming).
+ * CF_AIG_TOKEN must be an AI Gateway authentication token, NOT a regular
+ * Cloudflare API token. Create it from: AI Gateway > Settings > Create authentication token.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
@@ -47,21 +47,27 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
   const cfToken = env.CF_AIG_TOKEN
   if (cfToken) {
     headers['cf-aig-authorization'] = `Bearer ${cfToken}`
-    headers['Authorization'] = `Bearer ${cfToken}`
   }
   return headers
 }
 
 /**
+ * Get the AI Gateway base URL for fetch-based requests (streaming).
+ */
+export function getGatewayBaseUrl(): string {
+  return 'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x'
+}
+
+/**
  * Make a fetch request to the AI Gateway compat endpoint.
- * Uses the AI binding's getUrl() for pre-authenticated access.
+ * Used for streaming and audio endpoints where we need the raw Response.
  */
 export async function gatewayFetch(
   env: Env,
   path: string,
   init: RequestInit,
 ): Promise<Response> {
-  const baseUrl = await getGatewayUrl(env)
+  const baseUrl = getGatewayBaseUrl()
   const headers = gatewayHeaders(env, init.headers as Record<string, string> | undefined)
 
   const res = await fetch(`${baseUrl}${path}`, {

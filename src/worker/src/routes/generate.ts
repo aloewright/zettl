@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { appSettings } from '../db/schema'
 import type { createDb } from '../db/client'
-import { getGatewayUrl, gatewayHeaders } from '../services/gateway'
+import { getGatewayBaseUrl, gatewayHeaders } from '../services/gateway'
 import { listMcpTools, callMcpTool, mcpToolsToOpenAI } from '../services/mcp'
 
 const router = new Hono<HonoEnv>()
@@ -43,7 +43,7 @@ router.post('/stream', async (c) => {
     }
   }
 
-  const gatewayUrl = await getGatewayUrl(c.env)
+  const gatewayUrl = getGatewayBaseUrl()
   const headers = gatewayHeaders(c.env)
 
   // First request: stream with tools
