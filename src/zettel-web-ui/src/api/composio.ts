@@ -13,6 +13,7 @@ export interface McpTool {
 export interface ConnectionStatus {
   connected: boolean
   connectedAccountId?: string
+  userName?: string
 }
 
 export interface ConnectionsResponse {
@@ -20,7 +21,8 @@ export interface ConnectionsResponse {
 }
 
 export interface AuthLinkResponse {
-  redirectUrl: string
+  redirectUrl: string | null
+  alreadyConnected?: boolean
 }
 
 // ── Service definitions ──────────────────────────────────────────────────────
@@ -32,7 +34,7 @@ export interface ServiceDefinition {
 }
 
 export const COMPOSIO_SERVICES: ServiceDefinition[] = [
-  { slug: 'google', name: 'Google', description: 'Gmail, Drive, Calendar' },
+  { slug: 'gmail', name: 'Google (Gmail)', description: 'Email, Calendar, Drive' },
   { slug: 'linkedin', name: 'LinkedIn', description: 'Posts, connections' },
   { slug: 'resend', name: 'Resend', description: 'Transactional email' },
   { slug: 'youtube', name: 'YouTube', description: 'Videos, channels' },
@@ -55,8 +57,8 @@ export function getConnections(): Promise<ConnectionsResponse> {
   return get<ConnectionsResponse>('/api/composio/connections')
 }
 
-export function createAuthLink(service: string, callbackUrl: string): Promise<AuthLinkResponse> {
-  return post<AuthLinkResponse>('/api/composio/auth-link', { service, callbackUrl })
+export function createAuthLink(service: string): Promise<AuthLinkResponse> {
+  return post<AuthLinkResponse>('/api/composio/auth-link', { service })
 }
 
 export function disconnectService(service: string): Promise<void> {

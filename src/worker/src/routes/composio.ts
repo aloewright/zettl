@@ -5,30 +5,25 @@ import { appSettings } from '../db/schema'
 
 const router = new Hono<HonoEnv>()
 
-// ── Composio config ──────────────────────────────────────────────────────────
+// ── Composio MCP remote server config ────────────────────────────────────────
 
 const MCP_URL = 'https://connect.composio.dev/mcp'
-const COMPOSIO_API_KEY = 'ck_E31ySYYQVEKY5hUVYrCP'
-const COMPOSIO_API_BASE = 'https://backend.composio.dev/api/v3'
+const MCP_API_KEY = 'ck_E31ySYYQVEKY5hUVYrCP'
 
 const MCP_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
-  'x-consumer-api-key': COMPOSIO_API_KEY,
+  'Accept': 'application/json, text/event-stream',
+  'x-consumer-api-key': MCP_API_KEY,
 }
 
-const API_HEADERS: Record<string, string> = {
-  'Content-Type': 'application/json',
-  'x-api-key': COMPOSIO_API_KEY,
-}
+// ── Service definitions (toolkit slugs must match Composio exactly) ──────────
 
-// ── Auth config IDs for each service ─────────────────────────────────────────
-
-export const AUTH_CONFIGS: Record<string, { name: string; authConfigId: string; toolkit: string }> = {
-  google: { name: 'Google', authConfigId: 'ac_kSOO9FldhVkB', toolkit: 'GOOGLE' },
-  linkedin: { name: 'LinkedIn', authConfigId: 'ac_c26p9nmRQ849', toolkit: 'LINKEDIN' },
-  resend: { name: 'Resend', authConfigId: 'ac_kSOO9FldhVkB', toolkit: 'RESEND' },
-  youtube: { name: 'YouTube', authConfigId: 'ac_8j5-uDr3GbHv', toolkit: 'YOUTUBE' },
-  github: { name: 'GitHub', authConfigId: 'ac_0qg3KQqWaAcK', toolkit: 'GITHUB' },
+export const SERVICES: Record<string, { name: string; toolkit: string }> = {
+  gmail:     { name: 'Google (Gmail)',  toolkit: 'gmail' },
+  linkedin:  { name: 'LinkedIn',       toolkit: 'linkedin' },
+  resend:    { name: 'Resend',         toolkit: 'resend' },
+  youtube:   { name: 'YouTube',        toolkit: 'youtube' },
+  github:    { name: 'GitHub',         toolkit: 'github' },
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,6 +44,32 @@ async function upsertSetting(db: Db, key: string, value: string) {
 let mcpRequestId = 0
 function nextId() { return ++mcpRequestId }
 
+/** Parse SSE response from Composio MCP server. */
+async function parseSseResponse(res: Response): Promise<unknown> {
+  const text = await res.text()
+
+  // SSE format: "event: message\ndata: {...}\n\n"
+  // Extract JSON from the last "data: " line
+  const lines = text.split('\n')
+  let jsonData: string | null = null
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      jsonData = line.slice(6)
+    }
+  }
+
+  if (!jsonData) {
+    // Maybe it's plain JSON (fallback)
+    try {
+      return JSON.parse(text)
+    } catch {
+      throw new Error(`MCP: No parseable response. Raw: ${text.slice(0, 200)}`)
+    }
+  }
+
+  return JSON.parse(jsonData)
+}
+
 /** Send a JSON-RPC request to the Composio MCP server. */
 async function mcpCall(method: string, params?: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(MCP_URL, {
@@ -67,10 +88,24 @@ async function mcpCall(method: string, params?: Record<string, unknown>): Promis
     throw new Error(`MCP ${method} failed (${res.status}): ${text}`)
   }
 
-  const data = await res.json<{ result?: unknown; error?: { message?: string } }>()
+  const data = await parseSseResponse(res) as {
+    result?: { content?: Array<{ text?: string }>; isError?: boolean }
+    error?: { message?: string }
+  }
+
   if (data.error) {
     throw new Error(`MCP ${method} error: ${data.error.message ?? JSON.stringify(data.error)}`)
   }
+
+  // MCP tools/call wraps the result in content[].text as a JSON string
+  if (data.result?.content?.[0]?.text) {
+    try {
+      return JSON.parse(data.result.content[0].text)
+    } catch {
+      return data.result.content[0].text
+    }
+  }
+
   return data.result
 }
 
@@ -97,88 +132,109 @@ router.put('/config', async (c) => {
 
 // ── GET /connections — check connection status for all services ──────────────
 
+interface ToolkitResult {
+  toolkit: string
+  status: string
+  has_active_connection?: boolean
+  connected_account_id?: string
+  redirect_url?: string
+  error_message?: string
+  current_user_info?: Record<string, unknown>
+}
+
+interface ManageConnectionsResponse {
+  successful: boolean
+  data: {
+    message: string
+    results: Record<string, ToolkitResult>
+  }
+}
+
 router.get('/connections', async (c) => {
-  const userId = c.get('userId')
-
   try {
-    // Check connections for all configured services in parallel
-    const entries = Object.entries(AUTH_CONFIGS)
-    const results = await Promise.allSettled(
-      entries.map(async ([slug, config]) => {
-        const url = new URL(`${COMPOSIO_API_BASE}/connected_accounts`)
-        url.searchParams.set('user_ids', userId)
-        url.searchParams.set('toolkit_slugs', config.toolkit)
-        url.searchParams.set('statuses', 'ACTIVE')
+    const toolkits = Object.values(SERVICES).map((s) => s.toolkit)
 
-        const res = await fetch(url.toString(), { headers: API_HEADERS })
-        if (!res.ok) return { slug, connected: false }
+    const result = await mcpCall('tools/call', {
+      name: 'COMPOSIO_MANAGE_CONNECTIONS',
+      arguments: { toolkits },
+    }) as ManageConnectionsResponse
 
-        const data = await res.json<{ items?: Array<{ id: string; status: string }> }>()
-        const items = data.items ?? []
-        const active = items.length > 0
-        return {
-          slug,
-          connected: active,
-          connectedAccountId: active ? items[0]?.id : undefined,
+    const connections: Record<string, {
+      connected: boolean
+      connectedAccountId?: string
+      userName?: string
+    }> = {}
+
+    if (result?.data?.results) {
+      // Map toolkit slugs back to our service keys
+      for (const [serviceKey, serviceDef] of Object.entries(SERVICES)) {
+        const tkResult = result.data.results[serviceDef.toolkit]
+        if (tkResult) {
+          const userInfo = tkResult.current_user_info
+          let userName: string | undefined
+          if (userInfo) {
+            userName = (userInfo.name as string) ||
+              (userInfo.login as string) ||
+              (userInfo.email as string) ||
+              (userInfo.given_name as string)
+          }
+          connections[serviceKey] = {
+            connected: tkResult.status === 'active' && !!tkResult.has_active_connection,
+            connectedAccountId: tkResult.connected_account_id,
+            userName,
+          }
+        } else {
+          connections[serviceKey] = { connected: false }
         }
-      }),
-    )
-
-    const connections: Record<string, { connected: boolean; connectedAccountId?: string }> = {}
-    results.forEach((r, i) => {
-      const entry = entries[i]
-      if (!entry) return
-      const slug = entry[0]
-      if (r.status === 'fulfilled') {
-        connections[slug] = { connected: r.value.connected, connectedAccountId: r.value.connectedAccountId }
-      } else {
-        connections[slug] = { connected: false }
       }
-    })
+    }
 
     return c.json({ connections })
   } catch (err) {
     console.error('[composio] connections check failed:', err)
-    return c.json({ connections: {} }, 500)
+    return c.json({ connections: {}, error: err instanceof Error ? err.message : 'Unknown error' }, 500)
   }
 })
 
-// ── POST /auth-link — generate an OAuth redirect URL for a service ───────────
+// ── POST /auth-link — initiate OAuth for a service ───────────────────────────
 
 router.post('/auth-link', async (c) => {
-  const userId = c.get('userId')
-  const body = await c.req.json<{ service: string; callbackUrl: string }>()
-
+  const body = await c.req.json<{ service: string }>()
   if (!body.service) return c.json({ error: 'service is required' }, 400)
 
-  const config = AUTH_CONFIGS[body.service]
-  if (!config) return c.json({ error: `Unknown service: ${body.service}` }, 400)
+  const serviceDef = SERVICES[body.service]
+  if (!serviceDef) return c.json({ error: `Unknown service: ${body.service}` }, 400)
 
   try {
-    const res = await fetch(`${COMPOSIO_API_BASE}/connected_accounts/link`, {
-      method: 'POST',
-      headers: API_HEADERS,
-      body: JSON.stringify({
-        auth_config_id: config.authConfigId,
-        user_id: userId,
-        callback_url: body.callbackUrl,
-      }),
-    })
+    // Use reinitiate_all to force a new connection flow
+    const result = await mcpCall('tools/call', {
+      name: 'COMPOSIO_MANAGE_CONNECTIONS',
+      arguments: {
+        toolkits: [serviceDef.toolkit],
+        reinitiate_all: true,
+      },
+    }) as ManageConnectionsResponse
 
-    if (!res.ok) {
-      const text = await res.text()
-      console.error(`[composio] auth-link failed (${res.status}):`, text)
-      return c.json({ error: `Failed to create auth link: ${res.status}` }, 500)
+    const tkResult = result?.data?.results?.[serviceDef.toolkit]
+
+    if (!tkResult) {
+      return c.json({ error: 'No result from Composio' }, 500)
     }
 
-    const data = await res.json<{ redirect_url?: string; url?: string }>()
-    const redirectUrl = data.redirect_url || data.url
-
-    if (!redirectUrl) {
-      return c.json({ error: 'No redirect URL returned from Composio' }, 500)
+    if (tkResult.status === 'failed') {
+      return c.json({ error: tkResult.error_message || 'Connection failed' }, 500)
     }
 
-    return c.json({ redirectUrl })
+    if (tkResult.redirect_url) {
+      return c.json({ redirectUrl: tkResult.redirect_url })
+    }
+
+    // Already active — return that info
+    if (tkResult.status === 'active') {
+      return c.json({ alreadyConnected: true, redirectUrl: null })
+    }
+
+    return c.json({ error: 'Unexpected response from Composio' }, 500)
   } catch (err) {
     console.error('[composio] auth-link error:', err)
     return c.json({ error: err instanceof Error ? err.message : 'Auth link failed' }, 500)
@@ -188,40 +244,15 @@ router.post('/auth-link', async (c) => {
 // ── DELETE /connections/:service — disconnect a service ───────────────────────
 
 router.delete('/connections/:service', async (c) => {
-  const userId = c.get('userId')
   const service = c.req.param('service')
 
-  const config = AUTH_CONFIGS[service]
-  if (!config) return c.json({ error: `Unknown service: ${service}` }, 400)
+  const serviceDef = SERVICES[service]
+  if (!serviceDef) return c.json({ error: `Unknown service: ${service}` }, 400)
 
-  try {
-    // First find the active connection
-    const url = new URL(`${COMPOSIO_API_BASE}/connected_accounts`)
-    url.searchParams.set('user_ids', userId)
-    url.searchParams.set('toolkit_slugs', config.toolkit)
-    url.searchParams.set('statuses', 'ACTIVE')
-
-    const listRes = await fetch(url.toString(), { headers: API_HEADERS })
-    if (!listRes.ok) return c.json({ error: 'Failed to find connection' }, 500)
-
-    const listData = await listRes.json<{ items?: Array<{ id: string }> }>()
-    if (!listData.items || listData.items.length === 0) {
-      return c.json({ error: 'No active connection found' }, 404)
-    }
-
-    // Delete each active connection
-    for (const account of listData.items) {
-      await fetch(`${COMPOSIO_API_BASE}/connected_accounts/${account.id}`, {
-        method: 'DELETE',
-        headers: API_HEADERS,
-      })
-    }
-
-    return c.json({ ok: true })
-  } catch (err) {
-    console.error('[composio] disconnect error:', err)
-    return c.json({ error: err instanceof Error ? err.message : 'Disconnect failed' }, 500)
-  }
+  // Note: Composio MCP doesn't have a direct disconnect tool.
+  // We can reinitiate the connection which effectively invalidates the old one,
+  // but there's no "delete" action. For now, return not implemented.
+  return c.json({ error: 'Disconnect is not supported via MCP. Manage connections at composio.dev.' }, 501)
 })
 
 // ── GET /tools — list available MCP tools ────────────────────────────────────
@@ -264,9 +295,8 @@ router.post('/connect', async (c) => {
     const result = await mcpCall('tools/call', {
       name: 'COMPOSIO_MANAGE_CONNECTIONS',
       arguments: {
-        action: 'initiate',
-        app: body.app,
-        redirect_url: body.redirect_url,
+        toolkits: [body.app],
+        reinitiate_all: true,
       },
     })
     return c.json({ result })

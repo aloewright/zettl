@@ -38,8 +38,7 @@ export function useComposioConnections() {
 
 export function useCreateAuthLink() {
   return useMutation({
-    mutationFn: ({ service, callbackUrl }: { service: string; callbackUrl: string }) =>
-      createAuthLink(service, callbackUrl),
+    mutationFn: (service: string) => createAuthLink(service),
   })
 }
 

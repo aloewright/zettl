@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { ArrowLeft, Upload, Download, RefreshCw, Activity, LogOut, Plug, Unplug, Check, Sun, Moon, ExternalLink, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -61,7 +61,7 @@ function GitHubIcon({ className }: { className?: string }) {
 }
 
 const SERVICE_ICONS: Record<string, React.FC<{ className?: string }>> = {
-  google: GoogleIcon,
+  gmail: GoogleIcon,
   linkedin: LinkedInIcon,
   resend: ResendIcon,
   youtube: YouTubeIcon,
@@ -101,27 +101,6 @@ export function SettingsPage() {
   const disconnectService = useDisconnectService()
   const queryClient = useQueryClient()
   const [connectingService, setConnectingService] = useState<string | null>(null)
-
-  // Handle OAuth callback
-  const [searchParams, setSearchParams] = useSearchParams()
-  useEffect(() => {
-    const connectionStatus = searchParams.get('status')
-    const connectionService = searchParams.get('connection')
-    if (connectionStatus && connectionService) {
-      if (connectionStatus === 'success') {
-        toast.success(`${connectionService} connected successfully`)
-      } else {
-        toast.error(`Failed to connect ${connectionService}`)
-      }
-      // Clean up URL params
-      searchParams.delete('status')
-      searchParams.delete('connection')
-      searchParams.delete('connected_account_id')
-      setSearchParams(searchParams, { replace: true })
-      // Refresh connections
-      queryClient.invalidateQueries({ queryKey: ['composio', 'connections'] })
-    }
-  }, [searchParams, setSearchParams, queryClient])
 
   const dbData = health?.entries?.database?.data
   const totalNotes = Number(dbData?.total_notes ?? 0)
@@ -187,10 +166,22 @@ export function SettingsPage() {
   const handleConnect = async (slug: string) => {
     setConnectingService(slug)
     try {
-      const callbackUrl = `${window.location.origin}/settings?connection=${slug}`
-      const result = await createAuthLink.mutateAsync({ service: slug, callbackUrl })
-      // Redirect user to the OAuth page
-      window.location.href = result.redirectUrl
+      const result = await createAuthLink.mutateAsync(slug)
+      if (result.alreadyConnected) {
+        toast.success(`${slug} is already connected`)
+        queryClient.invalidateQueries({ queryKey: ['composio', 'connections'] })
+        setConnectingService(null)
+        return
+      }
+      if (result.redirectUrl) {
+        // Open Composio's branded auth link in a new tab
+        window.open(result.redirectUrl, '_blank', 'noopener')
+        toast.info('Complete authentication in the new tab, then refresh this page.')
+        setConnectingService(null)
+      } else {
+        toast.error(`No auth link returned for ${slug}`)
+        setConnectingService(null)
+      }
     } catch {
       toast.error(`Failed to connect ${slug}`)
       setConnectingService(null)
@@ -202,7 +193,8 @@ export function SettingsPage() {
       await disconnectService.mutateAsync(slug)
       toast.success(`${slug} disconnected`)
     } catch {
-      toast.error(`Failed to disconnect ${slug}`)
+      // MCP doesn't support disconnect — reconnect instead
+      toast.info('To disconnect, manage connections at composio.dev')
     }
   }
 
@@ -284,7 +276,7 @@ export function SettingsPage() {
                     <>
                       <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                         <Check className="h-3 w-3" />
-                        Connected
+                        {conn?.userName ? conn.userName : 'Connected'}
                       </span>
                       <Button
                         variant="ghost"
