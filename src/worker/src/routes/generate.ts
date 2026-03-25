@@ -8,7 +8,7 @@ import { listMcpTools, callMcpTool, type McpTool } from '../services/mcp'
 
 const router = new Hono<HonoEnv>()
 
-const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const CHAT_MODEL = 'dynamic/text_gen'
 // For env.AI.run() tool calling, we need the actual Workers AI model name
 const NATIVE_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
