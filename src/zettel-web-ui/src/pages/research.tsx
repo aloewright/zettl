@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, BookOpen, Search, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { ExternalLink, BookOpen, Search, CheckCircle, XCircle, Loader2, Telescope } from 'lucide-react'
 import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -87,6 +87,8 @@ function FindingCard({ finding }: { finding: ResearchFinding }) {
 }
 
 export function ResearchPage() {
+  const queryClient = useQueryClient()
+
   const { data: findings, isLoading } = useQuery({
     queryKey: ['research-findings'],
     queryFn: researchApi.getResearchFindings,
@@ -95,13 +97,37 @@ export function ResearchPage() {
       (query.state.data?.length ?? 0) === 0 ? 8000 : false,
   })
 
+  const triggerMutation = useMutation({
+    mutationFn: () => researchApi.triggerResearch(),
+    onSuccess: () => {
+      toast.success('Research started — findings will appear shortly')
+      queryClient.invalidateQueries({ queryKey: ['research-findings'] })
+    },
+    onError: () => toast.error('Failed to start research. Are there eligible notes?'),
+  })
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="font-serif text-2xl font-bold tracking-tight">Research Inbox</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Review findings from the research agent. Accept to add to your fleeting notes inbox, or dismiss to discard.
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="font-serif text-2xl font-bold tracking-tight">Research Inbox</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Review findings from the research agent. Accept to add to your fleeting notes inbox, or dismiss to discard.
+          </p>
+        </div>
+        <Button
+          onClick={() => triggerMutation.mutate()}
+          disabled={triggerMutation.isPending}
+          size="sm"
+          className="shrink-0 gap-1.5"
+        >
+          {triggerMutation.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Telescope className="size-4" />
+          )}
+          Run Research
+        </Button>
       </div>
 
       {isLoading && (
