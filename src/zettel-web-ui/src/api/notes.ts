@@ -2,9 +2,10 @@ import { get, post, put, del } from './client'
 import type { Note, NoteType, CreateNoteRequest, UpdateNoteRequest, ReEmbedResult, TitleSearchResult, SearchResult, InboxCountResult, PagedResponse, BacklinkResult, DuplicateCheckResult } from './types'
 
 export function listNotes(skip = 0, take = 50, tag?: string, noteType?: NoteType): Promise<PagedResponse<Note>> {
-  const params = new URLSearchParams({ skip: String(skip), take: String(take) })
+  const page = Math.floor(skip / take) + 1
+  const params = new URLSearchParams({ page: String(page), pageSize: String(take) })
   if (tag) params.set('tag', tag)
-  if (noteType) params.set('noteType', noteType.toLowerCase())
+  if (noteType) params.set('noteType', noteType)
   return get<PagedResponse<Note>>(`/api/notes?${params}`)
 }
 

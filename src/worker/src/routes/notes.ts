@@ -12,7 +12,7 @@ const router = new Hono<HonoEnv>()
 
 router.get('/', async (c) => {
   const db = c.get('db')
-  const { status, noteType, page = '1', pageSize = '20' } = c.req.query()
+  const { status, noteType, tag, page = '1', pageSize = '20' } = c.req.query()
 
   const pageNum = Math.max(1, parseInt(page))
   const size = Math.min(100, Math.max(1, parseInt(pageSize)))
@@ -21,6 +21,17 @@ router.get('/', async (c) => {
   const conditions = []
   if (status) conditions.push(eq(notes.status, status))
   if (noteType) conditions.push(eq(notes.noteType, noteType))
+
+  // If filtering by tag, find matching note IDs first
+  if (tag) {
+    const taggedRows = await db.select({ noteId: noteTags.noteId })
+      .from(noteTags).where(eq(noteTags.tag, tag))
+    const taggedIds = taggedRows.map(r => r.noteId)
+    if (taggedIds.length === 0) {
+      return c.json({ items: [], totalCount: 0 })
+    }
+    conditions.push(inArray(notes.id, taggedIds))
+  }
 
   const [rows, countRows] = await Promise.all([
     db.select().from(notes)

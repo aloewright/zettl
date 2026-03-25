@@ -10,7 +10,7 @@ export function approveAgenda(agendaId: string, blockedTaskIds: string[] = []): 
 }
 
 export function getResearchFindings(): Promise<ResearchFinding[]> {
-  return get<ResearchFinding[]>('/api/research/findings')
+  return get<ResearchFinding[]>('/api/research/findings?status=Pending')
 }
 
 export function acceptFinding(findingId: string): Promise<Note> {
