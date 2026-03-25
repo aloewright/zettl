@@ -599,10 +599,7 @@ router.get('/pieces/scheduled', async (c) => {
     .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
     .orderBy(contentPieces.scheduledAt)
 
-  return c.json(rows.map(r => ({
-    ...r,
-    generatedTags: parseTags(r.generatedTags),
-  })))
+  return c.json(rows.map(r => normalizePiece(r as unknown as Record<string, unknown>)))
 })
 
 router.get('/pieces/:id', async (c) => {

@@ -41,8 +41,14 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
  * - Compat routes (provider/model format):         /compat{path}
  */
 function buildGatewayUrl(model: string, path: string): string {
+  if (!model || typeof model !== 'string') {
+    throw new Error('AI Gateway: model is required in request body')
+  }
   if (model.startsWith('dynamic/')) {
     const routeName = model.slice('dynamic/'.length)
+    if (!routeName) {
+      throw new Error('AI Gateway: dynamic route name is empty (model="dynamic/")')
+    }
     return `${GATEWAY_BASE}/dynamic/${routeName}${path}`
   }
   return `${GATEWAY_BASE}/compat${path}`
@@ -62,6 +68,7 @@ export async function gatewayFetch(
   const model = (body.model as string) ?? ''
   const url = buildGatewayUrl(model, path)
   const headers = gatewayHeaders(env, extraHeaders)
+  const isStreaming = body.stream === true
 
   const res = await fetch(url, {
     method: 'POST',
@@ -71,7 +78,12 @@ export async function gatewayFetch(
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`AI Gateway ${url} ${res.status}: ${errText}`)
+    console.error(`AI Gateway error: ${url} ${res.status}: ${errText}`)
+    throw new Error(`AI Gateway request failed: ${res.status}`)
+  }
+
+  if (isStreaming && !res.body) {
+    throw new Error('Expected streaming response but received non-streaming response from gateway')
   }
 
   return res
