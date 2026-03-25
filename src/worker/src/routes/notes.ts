@@ -54,7 +54,7 @@ router.get('/', async (c) => {
   }, {})
 
   return c.json({
-    items: rows.map(r => ({ ...r, tags: tagMap[r.id] ?? [] })),
+    items: rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ tag })) })),
     totalCount: countRows[0]?.count ?? 0,
   })
 })
@@ -220,7 +220,7 @@ router.get('/:id', async (c) => {
   const tags = await db.select({ tag: noteTags.tag })
     .from(noteTags).where(eq(noteTags.noteId, id))
 
-  return c.json({ ...note, tags: tags.map(t => t.tag) })
+  return c.json({ ...note, tags })
 })
 
 router.post('/', async (c) => {
@@ -270,7 +270,7 @@ router.post('/', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: id })
 
   const [created] = await db.select().from(notes).where(eq(notes.id, id))
-  return c.json({ ...created, tags: body.tags ?? [] }, 201)
+  return c.json({ ...created, tags: (body.tags ?? []).map(tag => ({ tag })) }, 201)
 })
 
 router.put('/:id', async (c) => {
@@ -333,7 +333,7 @@ router.put('/:id', async (c) => {
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
   const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
-  return c.json({ ...updated, tags: tags.map(t => t.tag) })
+  return c.json({ ...updated, tags })
 })
 
 router.delete('/:id', async (c) => {
@@ -359,7 +359,7 @@ router.post('/:id/promote', async (c) => {
   await db.update(notes).set({ status: 'Permanent', updatedAt: isoNow() }).where(eq(notes.id, id))
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
   const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
-  return c.json({ ...updated, tags: tags.map(t => t.tag) })
+  return c.json({ ...updated, tags })
 })
 
 // ── Related / backlinks ────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: targetId })
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, targetId))
-  return c.json({ ...updated, tags: [...mergedTagSet] })
+  return c.json({ ...updated, tags: [...mergedTagSet].map(tag => ({ tag })) })
 })
 
 // ── Suggested tags ─────────────────────────────────────────────────────────────
