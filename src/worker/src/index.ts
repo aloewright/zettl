@@ -24,7 +24,7 @@ import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
-import { gatewayJSON, AI_GATEWAY_OPTS, GATEWAY_BASE } from './services/gateway'
+import { gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
 
 const app = new Hono<HonoEnv>()
 
@@ -111,7 +111,7 @@ app.get('/api/diag/ai', async (c) => {
       c.env,
       '/chat/completions',
       {
-        model: 'dynamic/text_gen',
+        model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast',
         messages: [{ role: 'user', content: 'Say ok' }],
         max_tokens: 5,
       },

@@ -2,10 +2,13 @@ import type { Env } from '../types'
 import { gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
-// All AI calls route through AI Gateway dynamic routes with unified billing.
+// Workers AI models via compat endpoint (pre-authenticated, no API keys needed).
+// When dynamic routes are configured in AI Gateway dashboard, switch to:
+//   CHAT_MODEL = 'dynamic/text_gen'
+//   RESEARCH_MODEL = 'dynamic/research_gen'
 
-const CHAT_MODEL = 'dynamic/text_gen'
-const RESEARCH_MODEL = 'dynamic/research_gen'
+const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const RESEARCH_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
