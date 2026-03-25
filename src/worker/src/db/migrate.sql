@@ -142,6 +142,44 @@ CREATE TABLE IF NOT EXISTS "VoiceConfigs" (
 
 CREATE INDEX IF NOT EXISTS idx_voiceconfigs_medium ON "VoiceConfigs"("Medium");
 
+-- ── Blog posts (published to Cloudflare domains) ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "BlogPosts" (
+  "Id"          TEXT PRIMARY KEY,
+  "PieceId"     TEXT,
+  "Slug"        TEXT NOT NULL,
+  "Title"       TEXT NOT NULL,
+  "Body"        TEXT NOT NULL,
+  "Description" TEXT,
+  "Tags"        TEXT NOT NULL DEFAULT '[]',
+  "Domain"      TEXT NOT NULL,
+  "Status"      TEXT NOT NULL DEFAULT 'published',
+  "PublishedAt"  TEXT NOT NULL DEFAULT (datetime('now')),
+  "UpdatedAt"    TEXT NOT NULL DEFAULT (datetime('now')),
+  "OgImage"     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_blogposts_domain_slug ON "BlogPosts"("Domain", "Slug");
+CREATE INDEX IF NOT EXISTS idx_blogposts_domain_published ON "BlogPosts"("Domain", "PublishedAt" DESC);
+CREATE INDEX IF NOT EXISTS idx_blogposts_pieceid ON "BlogPosts"("PieceId");
+
+-- ── Publish log (tracks cross-channel publishing) ───────────────────────────
+
+CREATE TABLE IF NOT EXISTS "PublishLog" (
+  "Id"           TEXT PRIMARY KEY,
+  "PieceId"      TEXT NOT NULL,
+  "Channel"      TEXT NOT NULL,
+  "Status"       TEXT NOT NULL DEFAULT 'pending',
+  "ExternalUrl"  TEXT,
+  "ExternalId"   TEXT,
+  "Metadata"     TEXT,
+  "ErrorMessage" TEXT,
+  "PublishedAt"  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_publishlog_pieceid ON "PublishLog"("PieceId");
+CREATE INDEX IF NOT EXISTS idx_publishlog_channel ON "PublishLog"("Channel");
+
 -- ── Research ──────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS "ResearchAgendas" (

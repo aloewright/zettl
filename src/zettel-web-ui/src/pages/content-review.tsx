@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   ExternalLink,
   BookOpen,
+  Share2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import { relativeDate } from '@/lib/format'
 import * as contentApi from '@/api/content'
 import { ApiError } from '@/api/client'
 import { usePublishToSubstack } from '@/hooks/use-substack'
+import { PublishDialog } from '@/components/publish-dialog'
 import type {
   ContentGeneration,
   ContentPiece,
@@ -154,6 +156,7 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
   })
 
   const publishSubstack = usePublishToSubstack()
+  const [publishOpen, setPublishOpen] = useState(false)
 
   const handleExport = useCallback(async () => {
     try {
@@ -352,6 +355,15 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
             Substack
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => setPublishOpen(true)}
+          className="gap-1 text-muted-foreground"
+        >
+          <Share2 className="size-3" />
+          Publish
+        </Button>
         {!alreadySent ? (
           <Button
             variant="ghost"
@@ -379,6 +391,7 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
           </a>
         ) : null}
       </div>
+      <PublishDialog piece={piece} open={publishOpen} onOpenChange={setPublishOpen} />
     </div>
   )
 })

@@ -20,7 +20,10 @@ import generateRouter from './routes/generate'
 import uploadRouter from './routes/upload'
 import composioRouter from './routes/composio'
 import substackRouter from './routes/substack'
+import publishRouter from './routes/publish'
+import blogRouter, { isBlogDomain } from './routes/blog'
 import authRouter from './routes/auth'
+import { createDb } from './db/client'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
@@ -72,6 +75,7 @@ app.route('/api/generate', generateRouter)
 app.route('/api/upload', uploadRouter)
 app.route('/api/composio', composioRouter)
 app.route('/api/substack', substackRouter)
+app.route('/api/publish', publishRouter)
 
 // ── Media serving (R2) ───────────────────────────────────────────────────────
 
@@ -131,6 +135,35 @@ app.get('/api/diag/ai', async (c) => {
   } catch (err) { results.B_embed = { ok: false, error: String(err) } }
 
   return c.json(results)
+})
+
+// ── Blog domain routing ─────────────────────────────────────────────────────
+// If the request hostname matches a configured blog domain, serve blog pages
+// instead of the SPA. This must be before the SPA fallback.
+
+const blogApp = new Hono<HonoEnv>()
+blogApp.use('*', dbMiddleware)
+blogApp.route('/', blogRouter)
+
+app.all('*', async (c, next) => {
+  // Skip API routes and media routes — always handled by the main app
+  if (c.req.path.startsWith('/api/') || c.req.path.startsWith('/media/') || c.req.path === '/health') {
+    return next()
+  }
+
+  // Check if this hostname is a blog domain
+  const hostname = new URL(c.req.url).hostname
+  try {
+    const db = createDb(c.env.d1_db)
+    const isBlog = await isBlogDomain(hostname, db)
+    if (isBlog) {
+      return blogApp.fetch(c.req.raw, c.env, c.executionCtx)
+    }
+  } catch {
+    // If DB check fails, fall through to SPA
+  }
+
+  return next()
 })
 
 // ── SPA fallback ────────────────────────────────────────────────────────────

@@ -678,3 +678,92 @@ SSE streaming chat completion.
 ```
 
 **Response:** `200 OK` -- `text/event-stream`
+
+---
+
+## Publish
+
+### `POST /api/publish`
+Publish a content piece to one or more channels (blog, linkedin, youtube, resend).
+
+**Body:**
+```json
+{
+  "pieceId": "string (required)",
+  "channels": ["blog", "linkedin", "youtube", "resend"],
+  "domain": "thinkingfeeling.com (optional, for blog)",
+  "slug": "custom-url-slug (optional, for blog)",
+  "emailTo": "recipient@example.com (for resend)",
+  "emailFrom": "sender@example.com (for resend)",
+  "emailSubject": "string (for resend)",
+  "videoUrl": "string (for youtube)",
+  "videoDescription": "string (for youtube)"
+}
+```
+
+**Response:** `200 OK` (all succeeded) or `207 Multi-Status` (partial success)
+```json
+{
+  "success": true,
+  "results": [
+    { "channel": "blog", "success": true, "externalUrl": "https://thinkingfeeling.com/my-post", "externalId": "..." },
+    { "channel": "linkedin", "success": true, "externalUrl": "..." }
+  ]
+}
+```
+
+### `GET /api/publish/history/:pieceId`
+Get publish history for a content piece.
+
+**Response:** `200 OK`
+```json
+{
+  "history": [
+    { "id": "...", "pieceId": "...", "channel": "blog", "status": "success", "externalUrl": "...", "publishedAt": "..." }
+  ]
+}
+```
+
+### `GET /api/publish/blog-posts`
+List published blog posts. Query params: `domain`, `skip`, `take`.
+
+**Response:** `200 OK`
+```json
+{ "items": [...], "totalCount": 5 }
+```
+
+### `DELETE /api/publish/blog-posts/:id`
+Archive (unpublish) a blog post.
+
+**Response:** `200 OK`
+
+### `GET /api/publish/blog-domains`
+Get configured blog domains.
+
+**Response:** `200 OK`
+```json
+{ "domains": ["thinkingfeeling.com"] }
+```
+
+### `PUT /api/publish/blog-domains`
+Update configured blog domains.
+
+**Body:**
+```json
+{ "domains": ["thinkingfeeling.com", "another-domain.com"] }
+```
+
+**Response:** `200 OK`
+
+---
+
+## Blog (Public)
+
+Blog posts are served as HTML when requests arrive at a configured blog domain. No authentication required.
+
+| Route | Description |
+|---|---|
+| `GET /` | Blog home — latest posts |
+| `GET /archive` | Full archive |
+| `GET /rss.xml` | RSS feed |
+| `GET /:slug` | Individual blog post |
