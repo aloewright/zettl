@@ -5,6 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x"
+CF_ACCESS_TEAM = "worthy"
 [observability]
 enabled = true
 
@@ -76,4 +77,3 @@ secret_name = "BRAVE_API_KEY"
 binding = "READWISE_ACCESS_TOKEN"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "READWISE_ACCESS_TOKEN"
-

@@ -6,7 +6,8 @@ export interface Env {
   // Cloudflare Vectorize index binding
   vector_db: VectorizeIndex
   CF_AI_GATEWAY_URL?: string // plain env var (not sensitive)
-  CF_AIG_TOKEN?: string                       // AI Gateway auth token (wrangler secret)
+  CF_ACCESS_TEAM?: string // Cloudflare Access team domain (optional override)
+  CF_AIG_TOKEN?: string | SecretsStoreSecret  // AI Gateway auth token (secret or Secrets Store binding)
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
@@ -24,9 +25,10 @@ export interface Env {
 
 /** Resolve an optional SecretsStoreSecret, returning undefined if unbound or missing. */
 export async function getOptionalSecret(
-  binding: SecretsStoreSecret | undefined,
+  binding: SecretsStoreSecret | string | undefined,
 ): Promise<string | undefined> {
   if (!binding) return undefined
+  if (typeof binding === 'string') return binding
   try { return await binding.get() } catch { return undefined }
 }
 

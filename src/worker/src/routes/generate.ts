@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { HonoEnv, Env } from '../types'
 import { appSettings } from '../db/schema'
 import type { createDb } from '../db/client'
+import { getOptionalSecret } from '../types'
 
 const router = new Hono<HonoEnv>()
 
@@ -96,7 +97,7 @@ router.post('/stream', async (c) => {
   }
 
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/chat/completions`
-  const cfToken = c.env.CF_AIG_TOKEN
+  const cfToken = await getOptionalSecret(c.env.CF_AIG_TOKEN)
 
   const gatewayHeaders: Record<string, string> = {
     'Content-Type': 'application/json',

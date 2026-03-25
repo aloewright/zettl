@@ -3,7 +3,7 @@ import { jwtVerify, createRemoteJWKSet } from 'jose'
 import type { HonoEnv } from '../types'
 import { createDb } from '../db/client'
 
-const CF_ACCESS_CERTS_URL = 'https://worthy.cloudflareaccess.com/cdn-cgi/access/certs'
+const DEFAULT_CF_ACCESS_TEAM = 'worthy'
 const CF_ACCESS_AUD = '7f0d66ab33bd01abc628ce0e605e5715b20c657c64797dd1acc8698306648438'
 
 /**
@@ -31,7 +31,9 @@ export const authMiddleware = createMiddleware<HonoEnv>(async (c, next) => {
   }
 
   try {
-    const JWKS = createRemoteJWKSet(new URL(CF_ACCESS_CERTS_URL))
+    const cfAccessTeam = c.env.CF_ACCESS_TEAM ?? DEFAULT_CF_ACCESS_TEAM
+    const certsUrl = `https://${cfAccessTeam}.cloudflareaccess.com/cdn-cgi/access/certs`
+    const JWKS = createRemoteJWKSet(new URL(certsUrl))
     const { payload } = await jwtVerify(token, JWKS, {
       audience: CF_ACCESS_AUD,
     })

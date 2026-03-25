@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import { getOptionalSecret } from '../types'
 
 // ── Embeddings via AI Gateway ───────────────────────────────────────────────
 // Routes through AI Gateway "x" dynamic route `ai_embed` with unified billing.
@@ -13,7 +14,7 @@ export async function generateEmbeddingAI(
   text: string,
 ): Promise<number[]> {
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/embeddings`
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
 
   const res = await fetch(gatewayUrl, {
     method: 'POST',

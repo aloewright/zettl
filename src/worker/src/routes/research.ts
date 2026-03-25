@@ -7,6 +7,7 @@ import { stripCodeFences } from '../services/llm'
 import { researchAgendas, researchTasks, researchFindings, notes } from '../db/schema'
 import { createDb } from '../db/client'
 import { chatCompletion } from '../services/llm'
+import { getOptionalSecret } from '../types'
 
 const router = new Hono<HonoEnv>()
 
@@ -50,7 +51,7 @@ Always respond with valid JSON.`,
     temperature: 0.3,
   }
 
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
 
   const res = await fetch(gatewayUrl, {
     method: 'POST',

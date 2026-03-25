@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import { getOptionalSecret } from '../types'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ async function gatewayFetch(
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string> ?? {}),
   }
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
   if (cfToken) {
     headers['cf-aig-authorization'] = `Bearer ${cfToken}`
   }

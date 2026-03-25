@@ -4,8 +4,7 @@ import type { HonoEnv } from '../types'
 import { loginPage } from '../pages/login'
 import { blockPage } from '../pages/block'
 
-const CF_ACCESS_TEAM = 'worthy'
-const CF_ACCESS_CERTS_URL = `https://${CF_ACCESS_TEAM}.cloudflareaccess.com/cdn-cgi/access/certs`
+const DEFAULT_CF_ACCESS_TEAM = 'worthy'
 const CF_ACCESS_AUD = '7f0d66ab33bd01abc628ce0e605e5715b20c657c64797dd1acc8698306648438'
 
 const router = new Hono<HonoEnv>()
@@ -21,7 +20,9 @@ router.get('/me', async (c) => {
   }
 
   try {
-    const JWKS = createRemoteJWKSet(new URL(CF_ACCESS_CERTS_URL))
+    const cfAccessTeam = c.env.CF_ACCESS_TEAM ?? DEFAULT_CF_ACCESS_TEAM
+    const certsUrl = `https://${cfAccessTeam}.cloudflareaccess.com/cdn-cgi/access/certs`
+    const JWKS = createRemoteJWKSet(new URL(certsUrl))
     const { payload } = await jwtVerify(token, JWKS, {
       audience: CF_ACCESS_AUD,
     })
@@ -41,18 +42,21 @@ router.get('/me', async (c) => {
 
 // GET /api/auth/logout — redirect to CF Access logout URL
 router.get('/logout', (c) => {
-  return c.redirect(`https://${CF_ACCESS_TEAM}.cloudflareaccess.com/cdn-cgi/access/logout`)
+  const cfAccessTeam = c.env.CF_ACCESS_TEAM ?? DEFAULT_CF_ACCESS_TEAM
+  return c.redirect(`https://${cfAccessTeam}.cloudflareaccess.com/cdn-cgi/access/logout`)
 })
 
 // GET /api/auth/login — custom login page matching app theme
 router.get('/login', (c) => {
+  const cfAccessTeam = c.env.CF_ACCESS_TEAM ?? DEFAULT_CF_ACCESS_TEAM
   const callbackUrl = c.req.query('redirect') ?? new URL(c.req.url).origin
-  return c.html(loginPage(CF_ACCESS_TEAM, callbackUrl))
+  return c.html(loginPage(cfAccessTeam, callbackUrl))
 })
 
 // GET /api/auth/block — custom access-denied page matching app theme
 router.get('/block', (c) => {
-  return c.html(blockPage(CF_ACCESS_TEAM))
+  const cfAccessTeam = c.env.CF_ACCESS_TEAM ?? DEFAULT_CF_ACCESS_TEAM
+  return c.html(blockPage(cfAccessTeam))
 })
 
 /** Extract a cookie value from a raw Request. */

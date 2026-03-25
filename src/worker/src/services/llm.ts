@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import { getOptionalSecret } from '../types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ async function gatewayChat(
   opts: { maxTokens: number; temperature: number; stream?: boolean },
 ): Promise<Response> {
   const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/chat/completions`
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = await getOptionalSecret(env.CF_AIG_TOKEN)
 
   const res = await fetch(gatewayUrl, {
     method: 'POST',
