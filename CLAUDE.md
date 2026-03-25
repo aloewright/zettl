@@ -28,11 +28,11 @@ Dynamic routes use the `/compat/...` endpoint with `model: "dynamic/{routeName}"
 
 | Route | Endpoint pattern | Purpose |
 |---|---|---|
-| `text_gen` | `/dynamic/text_gen/chat/completions` | LLM chat/content generation |
-| `research_gen` | `/dynamic/research_gen/chat/completions` | Perplexity research |
-| `audio_gen` | `/dynamic/audio_gen/audio/speech` | Text-to-speech |
-| `stt_gen` | `/dynamic/stt_gen/audio/transcriptions` | Speech-to-text |
-| `ai_embed` | `/dynamic/ai_embed/embeddings` | Text embeddings |
+| `text_gen` | `/compat/chat/completions` with `model: "dynamic/text_gen"` | LLM chat/content generation |
+| `research_gen` | `/compat/chat/completions` with `model: "dynamic/research_gen"` | Perplexity research |
+| `audio_gen` | `/compat/audio/speech` with `model: "dynamic/audio_gen"` | Text-to-speech |
+| `stt_gen` | `/compat/audio/transcriptions` with `model: "dynamic/stt_gen"` | Speech-to-text |
+| `ai_embed` | `/compat/embeddings` with `model: "dynamic/ai_embed"` | Text embeddings |
 
 ### Key files
 
