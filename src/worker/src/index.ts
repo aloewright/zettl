@@ -18,6 +18,7 @@ import sttRouter from './routes/stt'
 import settingsRouter from './routes/settings'
 import generateRouter from './routes/generate'
 import uploadRouter from './routes/upload'
+import composioRouter from './routes/composio'
 import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
@@ -67,6 +68,7 @@ app.route('/api/stt', sttRouter)
 app.route('/api/settings', settingsRouter)
 app.route('/api/generate', generateRouter)
 app.route('/api/upload', uploadRouter)
+app.route('/api/composio', composioRouter)
 
 // ── Media serving (R2) ───────────────────────────────────────────────────────
 
