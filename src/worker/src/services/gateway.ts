@@ -23,14 +23,15 @@ export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
  * Construct headers for requests sent through the Cloudflare AI Gateway.
  *
  * @param extra - Additional headers to merge into the resulting header map; values in `extra` override defaults.
- * @returns A map of headers containing `Content-Type: application/json` and, when `env.CF_AIG_TOKEN` is present, `cf-aig-authorization: Bearer <token>`.
+ * @returns A map of headers containing `Content-Type: application/json` and, when `env.CF_AIG_TOKEN` is present, both `Authorization: Bearer <token>` and `cf-aig-authorization: Bearer <token>`.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = env.CF_AIG_TOKEN?.trim()
   if (cfToken) {
+    headers.Authorization = `Bearer ${cfToken}`
     headers['cf-aig-authorization'] = `Bearer ${cfToken}`
   }
   if (extra) Object.assign(headers, extra)
