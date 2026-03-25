@@ -2,6 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getComposioConfig,
   updateComposioConfig,
+  getConnections,
+  createAuthLink,
+  disconnectService,
   listMcpTools,
   callMcpTool,
   connectApp,
@@ -21,6 +24,31 @@ export function useUpdateComposioConfig() {
     mutationFn: updateComposioConfig,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['composio'] })
+    },
+  })
+}
+
+export function useComposioConnections() {
+  return useQuery({
+    queryKey: ['composio', 'connections'],
+    queryFn: getConnections,
+    staleTime: 30_000,
+  })
+}
+
+export function useCreateAuthLink() {
+  return useMutation({
+    mutationFn: ({ service, callbackUrl }: { service: string; callbackUrl: string }) =>
+      createAuthLink(service, callbackUrl),
+  })
+}
+
+export function useDisconnectService() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (service: string) => disconnectService(service),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['composio', 'connections'] })
     },
   })
 }
