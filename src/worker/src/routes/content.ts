@@ -123,12 +123,24 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
     maxTokens: isBlog ? 2000 : 800,
   })
 
-  const parsed = JSON.parse(stripCodeFences(raw || '{}'))
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(stripCodeFences(raw || '{}'))
+  } catch {
+    // LLM returned non-JSON — use raw text as body
+    console.warn('[content] LLM returned non-JSON, using raw text as body')
+    return {
+      topicSummary: 'Generated content',
+      body: raw,
+      description: '',
+      tags: [],
+    }
+  }
   return {
-    topicSummary: parsed.topicSummary ?? 'Generated content',
-    body: parsed.body ?? '',
-    description: parsed.description ?? '',
-    tags: parsed.tags ?? [],
+    topicSummary: (parsed.topicSummary as string) ?? 'Generated content',
+    body: (parsed.body as string) ?? '',
+    description: (parsed.description as string) ?? '',
+    tags: (parsed.tags as string[]) ?? [],
   }
 }
 
@@ -252,7 +264,13 @@ router.post('/generate/from-note/:noteId', async (c) => {
   const seedNote: ClusterNote = seedRow
   const clusterNotes = await findClusterNotes(c.env.vector_db, db, seedNote)
 
-  const generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  let generated: Awaited<ReturnType<typeof generateContentFromNotes>>
+  try {
+    generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  } catch (err) {
+    console.error('[content] From-note generation failed:', err)
+    return c.json({ error: `Content generation failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   const generationId = makeId()
   await db.insert(contentGenerations).values({
