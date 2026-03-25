@@ -1,14 +1,14 @@
-# PostPilot (Zettel)
+# Post
 
-A personal Zettelkasten knowledge management app with AI-powered
-semantic search and automated content generation. Capture notes from
-the web, email, or Telegram; find connections between ideas using
-meaning-based search; and automatically generate blog posts and social
-media drafts from your knowledge graph.
+A personal knowledge management app built on the Zettelkasten method with
+AI-powered semantic search, automated content generation, and integrated
+publishing. Capture notes from the web, email, or Telegram; find connections
+between ideas; generate blog posts and social media drafts from your knowledge
+graph; and publish directly to Substack.
 
-Built on **Cloudflare Workers + D1 + Vectorize + R2 + AI Gateway**, with a
-React frontend served as Static Assets. Authentication is handled by
-Cloudflare Access (Google OAuth -- no separate auth service needed).
+Built on **Cloudflare Workers + D1 + Vectorize + R2 + AI Gateway + Browser Rendering**,
+with a React frontend served as Static Assets. Authentication via Cloudflare Access
+(Google OAuth). External tool integrations powered by **Composio MCP**.
 
 ---
 
@@ -17,6 +17,7 @@ Cloudflare Access (Google OAuth -- no separate auth service needed).
 - [Features](#features)
 - [Architecture](#architecture)
 - [AI Gateway](#ai-gateway)
+- [Composio Integration](#composio-integration)
 - [Deployment](#deployment)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
@@ -28,34 +29,58 @@ Cloudflare Access (Google OAuth -- no separate auth service needed).
 
 ## Features
 
-- **Semantic search** -- Hybrid search combining vector similarity (Perplexity embeddings via AI Gateway + Vectorize)
-  and SQLite full-text ranking; tunable weights
-- **Zettelkasten workflow** -- Permanent notes, fleeting notes (quick capture), structure
-  notes (organising), and source notes (with bibliography metadata)
-- **Multiple capture methods** -- Web UI, email (via Cloudflare capture queue), or Telegram bot
+### Knowledge Management
+- **Zettelkasten workflow** -- Permanent, fleeting (quick capture), structure (organising),
+  and source notes (with bibliography metadata)
+- **Semantic search** -- Hybrid search combining vector similarity (Perplexity embeddings,
+  2056-dim via AI Gateway + Vectorize) and SQLite full-text ranking; tunable weights
 - **Knowledge graph** -- Visual graph of note relationships and backlinks
-- **Backlinks** -- Wiki-style `[[Title]]` linking between notes with automatic backlink detection
-- **Related notes** -- AI-powered discovery of semantically similar notes and duplicate detection
-- **URL enrichment** -- Automatically fetches metadata from URLs found in notes (queued async)
-- **Import/export** -- Import plain `.md` files or Notion-compatible markdown exports; export
-  all notes as JSON
+- **Wikilinks** -- `[[Title]]` linking between notes with automatic backlink detection
+  and hover previews
+- **Related notes** -- AI-powered discovery of semantically similar notes and duplicates
+- **Tag system** -- Full-text autocomplete, filtering, and AI auto-tagging on import
 - **Version history** -- Tracks snapshots of note changes
-- **Tag system** -- Full-text autocomplete and filtering
-- **Readwise sync** -- Bidirectional highlight sync with Readwise Reader
-- **Automated content generation** -- Cron-scheduled pipeline (Monday blog, daily social)
-  that mines your knowledge graph and generates drafts in your voice for human review
-- **Publishing** -- Send approved pieces to GitHub (Astro blog) or Publer (social)
-- **Autonomous research agent** -- Analyses KB gaps, executes web research via
-  Perplexity (AI Gateway `research_gen` route), synthesises findings, queues
-  results as fleeting notes for inbox triage. Approving an agenda auto-executes.
-- **Media drive** -- Upload images, videos, audio, and files to Cloudflare R2;
-  browse and filter uploads on the `/drive` page with inline previews and playback
-- **Text-to-speech** -- TTS via AI Gateway `audio_gen` dynamic route (unified billing)
-- **Speech-to-text** -- Audio transcription via AI Gateway `stt_gen` dynamic route
+
+### Capture & Import
+- **Multiple capture methods** -- Web UI, email (via Cloudflare capture queue), or Telegram bot
+- **Import/export** -- Import `.md` files (plain, Notion, Readwise formats); export as JSON
+- **AI auto-tagging** -- Imported notes without tags get AI-generated tags automatically
+- **URL enrichment** -- Async metadata extraction from URLs found in notes
+- **Readwise sync** -- Highlight sync with Readwise Reader
+
+### Content Generation & Publishing
+- **Automated content pipeline** -- Cron-scheduled (Monday blog, daily social) pipeline
+  mines your knowledge graph and generates drafts in your voice for review
+- **Voice configuration** -- Customise tone, audience, and provide writing examples
+- **Substack publishing** -- Direct blog post publishing via Cloudflare Browser Rendering
+  (headless browser login + post creation)
+- **Markdown export** -- Download approved pieces as `.md` files
+
+### AI Chat & Tools
+- **Floating AI chat** -- Streaming chat window with voice input and file upload (image/PDF context)
+- **Composio MCP integration** -- 500+ external tool integrations available during AI chat
+  (search, email, calendar, code, etc.) via Composio's remote MCP server
+- **Connected services** -- OAuth authentication for Google (Gmail), LinkedIn, YouTube,
+  GitHub, and Resend managed in settings via Composio
+
+### Research Agent
+- **Autonomous research** -- Analyses KB gaps, generates research agenda, executes
+  web research via Perplexity (`research_gen` route), synthesises findings, queues
+  results as fleeting notes for inbox triage
+- **Approval workflow** -- Review agenda before execution; block individual tasks
+
+### Media & Audio
+- **Media drive** -- Upload images, videos, audio, and files to R2; browse and filter
+  on `/drive` with inline previews and playback
+- **Text-to-speech** -- TTS via AI Gateway `audio_gen` route
+- **Speech-to-text** -- Audio transcription via AI Gateway `stt_gen` route
+
+### System
 - **KB health dashboard** -- Embedding coverage, orphan detection, cluster analysis,
   AI-powered note splitting and summarisation
-- **Cloudflare Access auth** -- Google OAuth gate managed by Cloudflare Access;
-  no separate auth service required
+- **Rich text editor** -- BlockNote editor with file uploads, slash commands
+- **Theme support** -- Light, dark, and system themes
+- **Cloudflare Access auth** -- Google OAuth gate; no separate auth service
 
 ---
 
@@ -64,31 +89,32 @@ Cloudflare Access (Google OAuth -- no separate auth service needed).
 ```
 Browser --> Cloudflare Access (Google OAuth)
         --> Cloudflare Worker (zettl)
-               |  Hono router (src/worker/)
+               |  Hono router
                |
-        +------+------+------------------+
-        |      |      |                  |
-   D1 (SQLite) |  R2 (zettel-media)  AI Gateway (x) — unified billing
-   (notes,     |  (uploads: images,  +-------------------------------+
-    tags,       |   video, audio,    | text_gen       (LLM)          |
-    versions)   |   files)           | research_gen   (Perplexity)   |
-        |       |                    | ai_embed       (embeddings)   |
-   Vectorize    |                    | audio_gen      (TTS)          |
-   (zettel-notes,                    | stt_gen        (STT)          |
-    2056-dim cosine)                 | image_gen      (images)       |
-        |                            +-------------------------------+
+        +------+------+------------------+-------------------+
+        |      |      |                  |                   |
+   D1 (SQLite) |  R2 (zettel-media)  AI Gateway "x"    Composio MCP
+   (notes,     |  (media uploads)    (unified billing)  (remote tools)
+    tags,       |                    +-----------------+
+    versions,   |                    | text_gen (LLM)  |
+    content,    |                    | research_gen    |
+    research)   |                    | ai_embed        |
+        |       |                    | audio_gen (TTS) |
+   Vectorize    |                    | stt_gen   (STT) |
+   (zettel-notes,                    +-----------------+
+    2056-dim cosine)
+        |
    Cloudflare Queues
-   +-- zettel-embeddings
-   +-- zettel-enrichment
+   +-- zettel-embeddings    (async embedding pipeline)
+   +-- zettel-enrichment    (async URL metadata extraction)
 
-Capture:
-  Email / Telegram --> zettel-capture-queue worker --> Worker /api/capture/*
+Browser Rendering: Headless Chromium for Substack publishing
 
 Cron (Workers Triggers):
   Monday 09:00 UTC  --> blog content generation
   Daily  09:00 UTC  --> social content generation
 
-Static assets: React SPA bundled and served via Cloudflare Static Assets binding
+Static assets: React SPA served via Cloudflare Static Assets binding
 ```
 
 ---
@@ -96,73 +122,91 @@ Static assets: React SPA bundled and served via Cloudflare Static Assets binding
 ## AI Gateway
 
 **All AI requests** route through **Cloudflare AI Gateway** (`gateway: x`) with
-**unified billing** — no direct model calls, no provider API keys in the worker.
-The gateway handles provider selection, logging, caching, rate limiting, and cost tracking.
+**unified billing**. No direct model calls, no provider API keys in the worker.
+The gateway handles provider selection, logging, caching, rate limiting, and cost.
 
 | Route           | Endpoint pattern                | Purpose                                      |
 | --------------- | ------------------------------- | -------------------------------------------- |
-| `text_gen`      | `/compat/chat/completions`      | LLM chat completions                         |
-| `research_gen`  | `/compat/chat/completions`      | Web research (Perplexity sonar-pro)          |
+| `text_gen`      | `/compat/chat/completions`      | LLM chat completions and content generation  |
+| `research_gen`  | `/compat/chat/completions`      | Web research (Perplexity)                    |
 | `ai_embed`      | `/compat/embeddings`            | Text embeddings (pplx-embed-context-v1-4b, 2056-dim) |
 | `audio_gen`     | `/compat/audio/speech`          | Text-to-speech                               |
 | `stt_gen`       | `/compat/audio/transcriptions`  | Speech-to-text                               |
-| `image_gen`     | (configured in gateway)         | Image generation                             |
 
 ### Auth
 
-Each request sends a single auth header:
+`cf-aig-authorization: Bearer <CF_AIG_TOKEN>` -- a wrangler secret (plain string)
+read directly from `env.CF_AIG_TOKEN`. The gateway resolves providers and models
+from `model: "dynamic/<route>"`.
 
-- **`cf-aig-authorization: Bearer <CF_AIG_TOKEN>`** -- AI Gateway token for
-  unified billing. The gateway selects providers and models based on its
-  dynamic route configuration.
+### Key files
 
-The app sends `model: "dynamic/<route>"` (e.g., `dynamic/text_gen`) and the
-gateway resolves the actual provider and model.
+| File | Purpose |
+|------|---------|
+| `services/gateway.ts` | Centralized gateway config, `gatewayFetch()`, `gatewayHeaders()` |
+| `services/llm.ts` | `chatCompletion()`, `chatCompletionStream()`, `researchCompletion()` |
+| `services/embeddings.ts` | `generateEmbeddingAI()` (2056-dim Perplexity embeddings) |
+| `services/audio.ts` | `textToSpeech()`, `speechToText()` |
+| `services/mcp.ts` | Composio MCP client with SSE response parsing |
+
+---
+
+## Composio Integration
+
+External tool integrations are powered by **Composio** via a remote MCP server.
+
+- **MCP URL**: `https://connect.composio.dev/mcp`
+- **Consumer key**: Stored in the worker code (not a secret -- it's a public consumer key)
+- **Protocol**: JSON-RPC over HTTP with SSE responses
+
+### Connected Services (Settings page)
+
+Users authenticate with external services via Composio's OAuth flow:
+
+| Service | Toolkit slug | Capabilities |
+|---------|-------------|-------------|
+| Google (Gmail) | `gmail` | Email, Calendar, Drive |
+| LinkedIn | `linkedin` | Posts, connections |
+| YouTube | `youtube` | Videos, channels |
+| GitHub | `github` | Repos, issues, PRs |
+| Resend | `resend` | Transactional email |
+
+### AI Chat Tool Use
+
+When Composio MCP is enabled in settings, the AI chat (`/api/generate/stream`)
+fetches available tools, passes them as OpenAI function-call format, and
+executes tool calls via MCP when the LLM requests them.
 
 ---
 
 ## Deployment
 
-The app runs as a single **Cloudflare Worker** (`src/worker/`) that serves the React
-frontend from Static Assets and exposes the REST API.
-
 ### Prerequisites
 
-- Cloudflare account with Workers, D1, Vectorize, R2, AI Gateway enabled
+- Cloudflare account with Workers, D1, Vectorize, R2, AI Gateway, Browser Rendering
 - Node.js 20+ and `npm`
 - Wrangler CLI: `npm install -g wrangler`
 
 ### 1 -- Create Cloudflare resources
 
 ```bash
-# D1 database
 npx wrangler d1 create zettel
-
-# Vectorize index (2056 dims for pplx-embed-context-v1-4b)
 npx wrangler vectorize create zettel-notes --dimensions=2056 --metric=cosine
-
-# R2 bucket (media uploads)
 npx wrangler r2 bucket create zettel-media
-
-# Queues
 npx wrangler queues create zettel-embeddings
 npx wrangler queues create zettel-enrichment
 ```
 
-Copy the IDs printed by each command into `src/worker/wrangler.toml`.
+Copy the IDs into `src/worker/wrangler.toml`.
 
 ### 2 -- Store secrets
 
-Secrets are stored in a Cloudflare Secrets Store and/or via `wrangler secret put`:
-
 ```bash
-# AI Gateway auth (required for unified billing)
+# Required: AI Gateway auth for unified billing
 npx wrangler secret put CF_AIG_TOKEN
 
-# Optional integrations
-npx wrangler secret put BRAVE_API_KEY           # Research agent web search
-npx wrangler secret put READWISE_ACCESS_TOKEN   # Readwise sync
-npx wrangler secret put TELEGRAM_BOT_TOKEN      # Telegram capture
+# Optional integrations (stored in Cloudflare Secrets Store)
+# Configure bindings in wrangler.toml [[secrets_store_secrets]]
 ```
 
 ### 3 -- Run database migrations
@@ -175,19 +219,14 @@ npx wrangler d1 migrations apply zettel --remote
 ### 4 -- Build and deploy
 
 ```bash
-# Build the React frontend first
 cd src/zettel-web-ui && npm ci && npm run build && cd -
-
-# Deploy the worker + static assets
 cd src/worker && npx wrangler deploy
 ```
 
 ### 5 -- Configure Cloudflare Access
 
-In the Cloudflare Dashboard > Access > Applications, create a self-hosted
-application for your worker domain and add a Google OAuth identity provider.
-This gates the entire app behind your Google account -- no additional auth
-configuration is needed in the app.
+Create a self-hosted application in Cloudflare Access for your worker domain
+with a Google OAuth identity provider.
 
 ### Local development
 
@@ -207,8 +246,8 @@ cd src/zettel-web-ui && npm run dev
 
 | Secret / Binding            | Type           | Required | Description                                      |
 | --------------------------- | -------------- | -------- | ------------------------------------------------ |
-| `CF_AIG_TOKEN`              | Wrangler secret | Yes     | Cloudflare AI Gateway token for unified billing  |
-| `BRAVE_API_KEY`             | Secrets Store  | No       | Brave Search API key for research agent          |
+| `CF_AIG_TOKEN`              | Wrangler secret | Yes     | AI Gateway token for unified billing (plain string) |
+| `BRAVE_API_KEY`             | Secrets Store  | No       | Brave Search API key                             |
 | `READWISE_ACCESS_TOKEN`     | Secrets Store  | No       | Readwise Reader access token                     |
 | `TELEGRAM_BOT_TOKEN`        | Secrets Store  | No       | Telegram bot token for capture                   |
 | `CAPTURE_WEBHOOK_SECRET`    | Secrets Store  | No       | Shared secret for webhook capture endpoints      |
@@ -217,18 +256,8 @@ cd src/zettel-web-ui && npm run dev
 
 | Variable              | Description                                                        |
 | --------------------- | ------------------------------------------------------------------ |
-| `CF_AI_GATEWAY_URL`   | AI Gateway base URL (`https://gateway.ai.cloudflare.com/v1/...`)   |
-
-### Search weights
-
-Tunable in `src/worker/src/types.ts`:
-
-| Constant                 | Default | Description                                 |
-| ------------------------ | ------- | ------------------------------------------- |
-| `semanticWeight`         | `0.7`   | Vectorize similarity weight in hybrid search |
-| `fullTextWeight`         | `0.3`   | D1 FTS weight in hybrid search              |
-| `minimumSimilarity`      | `0.5`   | Minimum cosine similarity threshold         |
-| `minimumHybridScore`     | `0.1`   | Minimum combined score to include a result  |
+| `CF_AI_GATEWAY_URL`   | AI Gateway base URL (informational; actual URL is hardcoded in `gateway.ts`) |
+| `CF_ACCESS_TEAM`      | Cloudflare Access team domain for JWT validation                   |
 
 ---
 
@@ -241,16 +270,14 @@ See [docs/API_REFERENCE.md](docs/API_REFERENCE.md) for full endpoint documentati
 | Method   | Endpoint                        | Description                                 |
 | -------- | ------------------------------- | ------------------------------------------- |
 | `POST`   | `/api/notes`                    | Create a note                               |
-| `GET`    | `/api/notes`                    | List notes (supports pagination, filtering) |
+| `GET`    | `/api/notes`                    | List notes (pagination, filtering)          |
 | `GET`    | `/api/notes/{id}`               | Get a note by ID                            |
 | `PUT`    | `/api/notes/{id}`               | Update a note                               |
 | `DELETE` | `/api/notes/{id}`               | Delete a note                               |
-| `POST`   | `/api/notes/check-duplicate`    | Check for duplicate content                 |
 | `POST`   | `/api/notes/re-embed`           | Re-embed all notes                          |
-| `GET`    | `/api/notes/{id}/backlinks`     | Get wiki-style backlinks                    |
+| `GET`    | `/api/notes/{id}/backlinks`     | Get wikilink backlinks                      |
 | `GET`    | `/api/notes/{id}/versions`      | Get version history                         |
 | `POST`   | `/api/notes/{id}/promote`       | Convert fleeting to permanent               |
-| `POST`   | `/api/notes/{fleetingId}/merge` | Merge fleeting into permanent               |
 | `GET`    | `/api/notes/discover`           | Discover notes (random, orphans, today)     |
 
 ### Search
@@ -264,77 +291,68 @@ See [docs/API_REFERENCE.md](docs/API_REFERENCE.md) for full endpoint documentati
 
 ### Content Generation
 
-| Method   | Endpoint                                 | Description                                 |
-| -------- | ---------------------------------------- | ------------------------------------------- |
-| `POST`   | `/api/content/generate`                  | Trigger a manual generation run             |
-| `POST`   | `/api/content/generate/from-note/{id}`   | Generate from a specific seed note          |
-| `GET`    | `/api/content/generations`               | List generation runs (paginated)            |
-| `GET`    | `/api/content/generations/{id}`          | Get a run with its content pieces           |
-| `POST`   | `/api/content/generations/{id}/regenerate` | Regenerate all pieces                     |
-| `GET`    | `/api/content/pieces`                    | List pieces (filter by medium, status)      |
-| `GET`    | `/api/content/pieces/{id}`               | Get a single piece                          |
-| `PUT`    | `/api/content/pieces/{id}/approve`       | Approve a piece                             |
-| `PUT`    | `/api/content/pieces/{id}/reject`        | Reject a piece                              |
-| `POST`   | `/api/content/pieces/{id}/send-to-draft` | Send to GitHub (blog) or Publer (social)    |
-| `GET`    | `/api/content/pieces/{id}/export`        | Download piece as `.md`                     |
-| `PUT`    | `/api/content/pieces/{id}/description`   | Update piece description                    |
-| `PUT`    | `/api/content/pieces/{id}/tags`          | Update piece tags                           |
-| `GET`    | `/api/content/schedule`                  | Get schedule settings                       |
-| `PUT`    | `/api/content/schedule/blog`             | Update blog schedule                        |
-| `PUT`    | `/api/content/schedule/social`           | Update social schedule                      |
+| Method   | Endpoint                                   | Description                     |
+| -------- | ------------------------------------------ | ------------------------------- |
+| `POST`   | `/api/content/generate`                    | Trigger generation run          |
+| `POST`   | `/api/content/generate/from-note/{id}`     | Generate from specific note     |
+| `GET`    | `/api/content/generations`                 | List runs (paginated)           |
+| `GET`    | `/api/content/generations/{id}`            | Get run with pieces             |
+| `POST`   | `/api/content/generations/{id}/regenerate` | Regenerate all pieces           |
+| `GET`    | `/api/content/pieces`                      | List pieces                     |
+| `PUT`    | `/api/content/pieces/{id}/approve`         | Approve a piece                 |
+| `PUT`    | `/api/content/pieces/{id}/reject`          | Reject a piece                  |
+| `GET`    | `/api/content/pieces/{id}/export`          | Download as `.md`               |
 
-### Text-to-Speech / Speech-to-Text
+### AI Chat
 
-| Method | Endpoint             | Description                                    |
-| ------ | -------------------- | ---------------------------------------------- |
-| `POST` | `/api/tts`           | Text-to-speech (returns `audio/mpeg`)          |
-| `POST` | `/api/tts/transcribe`| Speech-to-text (accepts audio binary or base64)|
-| `GET`  | `/api/tts/voices`    | List available voices                          |
-
-### Knowledge Base Health
-
-| Method | Endpoint                                          | Description                                    |
-| ------ | ------------------------------------------------- | ---------------------------------------------- |
-| `GET`  | `/api/kb-health/overview`                         | Scorecard, orphans, clusters, unused seeds     |
-| `GET`  | `/api/kb-health/orphan/{id}/suggestions`          | Semantic suggestions for an orphan             |
-| `POST` | `/api/kb-health/orphan/{id}/link`                 | Insert a wikilink into an orphan               |
-| `GET`  | `/api/kb-health/missing-embeddings`               | List notes missing embeddings                  |
-| `POST` | `/api/kb-health/missing-embeddings/{id}/requeue`  | Requeue a single note for embedding            |
-| `POST` | `/api/kb-health/missing-embeddings/requeue-all`   | Bulk requeue all pending/stale/failed notes    |
-| `GET`  | `/api/kb-health/large-notes`                      | List notes exceeding size threshold            |
-| `POST` | `/api/kb-health/large-notes/{id}/summarize`       | AI-powered summarisation                       |
-| `POST` | `/api/kb-health/large-notes/{id}/split-suggestions`| AI split analysis                             |
-| `POST` | `/api/kb-health/large-notes/{id}/apply-split`     | Create notes from split suggestions            |
+| Method | Endpoint               | Description                                         |
+| ------ | ---------------------- | --------------------------------------------------- |
+| `POST` | `/api/generate/stream` | Streaming LLM chat with optional MCP tool execution |
 
 ### Research Agent
 
-| Method | Endpoint                                      | Description                                  |
-| ------ | --------------------------------------------- | -------------------------------------------- |
-| `POST` | `/api/research/trigger`                       | Analyse KB and generate research agenda      |
-| `POST` | `/api/research/agenda/{id}/approve`           | Approve agenda and start execution           |
-| `GET`  | `/api/research/findings`                      | List pending findings                        |
-| `POST` | `/api/research/findings/{id}/accept`          | Accept finding (creates fleeting note)       |
-| `POST` | `/api/research/findings/{id}/dismiss`         | Dismiss a finding                            |
+| Method | Endpoint                              | Description                          |
+| ------ | ------------------------------------- | ------------------------------------ |
+| `POST` | `/api/research/trigger`               | Generate research agenda from KB     |
+| `POST` | `/api/research/agenda/{id}/approve`   | Approve and auto-execute             |
+| `GET`  | `/api/research/findings`              | List findings                        |
+| `POST` | `/api/research/findings/{id}/accept`  | Accept (creates fleeting note)       |
+| `POST` | `/api/research/findings/{id}/dismiss` | Dismiss finding                      |
 
-### Voice Configuration
+### Audio
 
-| Method   | Endpoint                   | Description                          |
-| -------- | -------------------------- | ------------------------------------ |
-| `GET`    | `/api/voice/examples`      | List writing examples                |
-| `POST`   | `/api/voice/examples`      | Add a writing example                |
-| `DELETE` | `/api/voice/examples/{id}` | Delete a writing example             |
-| `GET`    | `/api/voice/configs`       | List voice configs                   |
-| `POST`   | `/api/voice/configs`       | Create a voice config                |
-| `PUT`    | `/api/voice/configs/{id}`  | Update a voice config                |
-| `DELETE` | `/api/voice/configs/{id}`  | Delete a voice config                |
+| Method | Endpoint        | Description                          |
+| ------ | --------------- | ------------------------------------ |
+| `POST` | `/api/tts`      | Text-to-speech (returns audio/mpeg)  |
+| `GET`  | `/api/tts/voices` | List available voices              |
+| `POST` | `/api/stt`      | Speech-to-text                       |
 
-### Media Upload / Drive
+### Composio / MCP
 
-| Method | Endpoint                      | Description                                    |
-| ------ | ----------------------------- | ---------------------------------------------- |
-| `POST` | `/api/upload`                 | Upload a file (multipart form, 50 MB max)      |
-| `GET`  | `/api/upload/files`           | List uploaded files (filter: `?type=image`)     |
-| `GET`  | `/media/{key}`                | Serve a file from R2 (immutable cache)         |
+| Method   | Endpoint                           | Description                          |
+| -------- | ---------------------------------- | ------------------------------------ |
+| `GET`    | `/api/composio/config`             | Get MCP enabled status               |
+| `PUT`    | `/api/composio/config`             | Enable/disable MCP tools             |
+| `GET`    | `/api/composio/connections`        | Check all service connection statuses |
+| `POST`   | `/api/composio/auth-link`          | Generate OAuth redirect for service  |
+| `GET`    | `/api/composio/tools`              | List available MCP tools             |
+| `POST`   | `/api/composio/tools/call`         | Execute an MCP tool                  |
+
+### Substack Publishing
+
+| Method | Endpoint              | Description                          |
+| ------ | --------------------- | ------------------------------------ |
+| `GET`  | `/api/substack/config` | Get Substack configuration          |
+| `PUT`  | `/api/substack/config` | Update credentials/subdomain        |
+| `POST` | `/api/substack/publish` | Publish a note to Substack          |
+
+### Media
+
+| Method | Endpoint              | Description                          |
+| ------ | --------------------- | ------------------------------------ |
+| `POST` | `/api/upload`         | Upload file (multipart, 50 MB max)   |
+| `GET`  | `/api/upload/files`   | List uploads (filter: `?type=image`) |
+| `GET`  | `/media/{key}`        | Serve file from R2                   |
 
 ### Other
 
@@ -342,23 +360,18 @@ See [docs/API_REFERENCE.md](docs/API_REFERENCE.md) for full endpoint documentati
 | ------ | ----------------------- | -------------------- |
 | `GET`  | `/api/tags?q={prefix}`  | Autocomplete tags    |
 | `GET`  | `/api/graph`            | Knowledge graph data |
-| `GET`  | `/api/discover`         | Discover notes       |
-| `GET`  | `/api/settings`         | Get LLM settings     |
-| `PUT`  | `/api/settings/model`   | Update LLM provider  |
-| `POST` | `/api/generate/stream`  | Streaming LLM chat   |
+| `GET`  | `/api/settings`         | Get app settings     |
 | `GET`  | `/health`               | Service health check |
 
 ---
 
 ## Running Tests
 
-**Frontend (Vitest):**
 ```bash
+# Frontend (Vitest)
 cd src/zettel-web-ui && npm test
-```
 
-**Backend (worker type-check):**
-```bash
+# Backend (type-check)
 cd src/worker && npx tsc --noEmit
 ```
 
@@ -369,28 +382,45 @@ cd src/worker && npx tsc --noEmit
 ```
 zettl/
   src/
-    worker/                 # Cloudflare Worker -- Hono API backend
+    worker/                    # Cloudflare Worker -- Hono API backend
       src/
-        index.ts            # Entry point: fetch + queue + scheduled handlers
-        middleware/auth.ts   # Cloudflare Access JWT validation
-        routes/              # One file per route group (notes, search, content, ...)
-        services/            # LLM, audio (TTS/STT), embeddings, search
-          llm.ts             # AI Gateway text_gen / research_gen routes
-          audio.ts           # AI Gateway audio_gen / stt_gen routes
-          embeddings.ts      # AI Gateway ai_embed route (pplx-embed-context-v1-4b)
-          search.ts          # Hybrid search (Vectorize + D1 FTS)
-        queues/              # Embedding + enrichment queue consumers
-        db/                  # Drizzle ORM schema + D1 client
-        cron/                # Content generation cron handler
-      wrangler.toml          # Worker config: D1, Vectorize, R2, Queues
-    zettel-web-ui/           # React frontend (Vite + Tailwind + shadcn/ui)
+        index.ts               # Entry: fetch + queue + scheduled handlers
+        middleware/auth.ts      # Cloudflare Access JWT validation
+        routes/                 # One file per route group
+          notes.ts              # CRUD, re-embed, backlinks, versions
+          search.ts             # Hybrid search (vector + FTS)
+          content.ts            # Content generation + review pipeline
+          research.ts           # Research agent (agenda, tasks, findings)
+          generate.ts           # Streaming AI chat with MCP tool use
+          composio.ts           # Composio connections + MCP proxy
+          substack.ts           # Substack publishing via Browser Rendering
+          voice.ts              # Voice config (tone, audience, examples)
+          tts.ts / stt.ts       # Text-to-speech / Speech-to-text
+          upload.ts             # Media upload to R2
+          import-export.ts      # Import/export with auto-tagging
+          capture.ts            # Webhook + Telegram capture
+          ...
+        services/               # Shared service layer
+          gateway.ts            # AI Gateway config + fetch (single source of truth)
+          llm.ts                # Chat completion, streaming, research
+          embeddings.ts         # Vector embeddings (2056-dim)
+          audio.ts              # TTS / STT
+          mcp.ts                # Composio MCP client (SSE-aware)
+          search.ts             # Hybrid search engine
+          readwise.ts           # Readwise sync
+        queues/                 # Async queue consumers
+          embedding.ts          # Note embedding pipeline
+          enrichment.ts         # URL metadata extraction
+        db/                     # Drizzle ORM schema + D1 client
+        cron/                   # Scheduled content generation
+      wrangler.toml             # Worker config
+    zettel-web-ui/              # React frontend
       src/
-        api/                 # Typed fetch wrappers for each backend endpoint
-        components/          # UI components (header, note editor, graph, ...)
-        pages/               # Route pages
-        hooks/               # React Query hooks
-  voice-service/             # Optional Python voice microservice
-  docs/                      # Design docs, API reference, compound learnings
+        api/                    # Typed API client functions
+        components/             # UI (header, note editor, graph, AI chat, ...)
+        pages/                  # Route pages (inbox, settings, drive, ...)
+        hooks/                  # React Query hooks
+  docs/                         # Design docs, API reference, compound learnings
 ```
 
 ---
