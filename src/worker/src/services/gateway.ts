@@ -19,6 +19,27 @@ export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/
 /** Options to pass to env.AI.run() to route through AI Gateway. */
 export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
 
+function extractModel(body: unknown): string | undefined {
+  if (typeof body !== 'object' || body === null) return undefined
+  const maybeModel = (body as { model?: unknown }).model
+  return typeof maybeModel === 'string' ? maybeModel : undefined
+}
+
+/**
+ * Cloudflare AI Gateway uses different paths for dynamic routes (fallback /
+ * unified billing) vs compat endpoints. Route dynamic/<name> traffic to
+ * /dynamic/<name>/{path}; everything else stays on /compat/{path}.
+ */
+function buildGatewayPath(path: string, body: unknown): string {
+  const model = extractModel(body)
+  const dynamicMatch = model?.match(/^(?:dynamic|ai-gateway)\/(.+)$/)
+  if (dynamicMatch?.[1]) {
+    const route = dynamicMatch[1]
+    return `/dynamic/${route}${path}`
+  }
+  return `/compat${path}`
+}
+
 /**
  * Build gateway auth headers for fetch-based calls.
  */
@@ -35,7 +56,7 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * POST to the compat endpoint and return the raw Response.
+ * POST to AI Gateway (routes dynamic/{route} or compat/{path}) and return the raw Response.
  */
 export async function gatewayFetch(
   env: Env,
@@ -43,7 +64,7 @@ export async function gatewayFetch(
   body: unknown,
   extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  const url = `${GATEWAY_BASE}/compat${path}`
+  const url = `${GATEWAY_BASE}${buildGatewayPath(path, body)}`
   const headers = gatewayHeaders(env, extraHeaders)
 
   const res = await fetch(url, {

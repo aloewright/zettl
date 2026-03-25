@@ -26,8 +26,8 @@ Project-level instructions that override or extend global defaults.
 
 | Route | Endpoint pattern | Purpose |
 |---|---|---|
-| `text_gen` | `/compat/chat/completions` with `model: "dynamic/text_gen"` | LLM chat/content generation |
-| `research_gen` | `/compat/chat/completions` with `model: "dynamic/research_gen"` | Perplexity research |
+| `text_gen` | `/dynamic/text_gen/chat/completions` with `model: "dynamic/text_gen"` | LLM chat/content generation |
+| `research_gen` | `/dynamic/research_gen/chat/completions` with `model: "dynamic/research_gen"` | Perplexity research |
 | `audio_gen` | `/compat/audio/speech` with `model: "dynamic/audio_gen"` | Text-to-speech |
 | `stt_gen` | `/compat/audio/transcriptions` | Speech-to-text |
 | `ai_embed` | `/compat/embeddings` with `model: "dynamic/ai_embed"` | Text embeddings (2056-dim, pplx-embed-context-v1-4b) |
