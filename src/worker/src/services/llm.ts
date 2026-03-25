@@ -2,9 +2,10 @@ import type { Env } from '../types'
 import { gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
-// All AI calls route through AI Gateway dynamic routes with unified billing.
+// Chat uses workers-ai/ prefix via compat endpoint (pre-authenticated, no API keys needed).
+// Research uses dynamic/research_gen route (Perplexity sonar-pro via gateway).
 
-const CHAT_MODEL = 'dynamic/text_gen'
+const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 const RESEARCH_MODEL = 'dynamic/research_gen'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
