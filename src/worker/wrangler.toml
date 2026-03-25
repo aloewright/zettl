@@ -29,6 +29,10 @@ binding = "vector_db"
 index_name = "zettel-notes"
 
 
+# ── Cloudflare Browser Rendering ──────────────────────────────────────────────
+[browser]
+binding = "BROWSER"
+
 # ── Cloudflare R2 (media uploads) ─────────────────────────────────────────────
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"

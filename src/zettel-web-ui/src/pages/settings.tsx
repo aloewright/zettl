@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, Upload, Download, RefreshCw, Activity, LogOut, Plug, Unplug, ExternalLink, Plus, Trash2, Key } from 'lucide-react'
+import { ArrowLeft, Upload, Download, RefreshCw, Activity, LogOut, Plug, Unplug, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useReEmbed } from '@/hooks/use-notes'
 import { useHealth } from '@/hooks/use-health'
-import { useComposioConfig, useUpdateComposioConfig, useComposioConnections, useConnectToolkit, useDisconnectToolkit } from '@/hooks/use-composio'
+import { useComposioConfig, useUpdateComposioConfig } from '@/hooks/use-composio'
+import { useSubstackConfig, useUpdateSubstackConfig } from '@/hooks/use-substack'
 import { importNotes, exportNotes } from '@/api/import-export'
 import { logout } from '@/auth'
 import { toast } from 'sonner'
@@ -26,16 +27,21 @@ export function SettingsPage() {
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
 
+  // Substack state
+  const { data: substackConfig } = useSubstackConfig()
+  const updateSubstack = useUpdateSubstackConfig()
+  const [substackSubdomain, setSubstackSubdomain] = useState('')
+  const [substackEmail, setSubstackEmail] = useState('')
+  const [substackPassword, setSubstackPassword] = useState('')
+
+  useEffect(() => {
+    if (substackConfig?.subdomain) setSubstackSubdomain(substackConfig.subdomain)
+    if (substackConfig?.email) setSubstackEmail(substackConfig.email)
+  }, [substackConfig?.subdomain, substackConfig?.email])
+
   // Composio MCP state
   const { data: composioConfig } = useComposioConfig()
   const updateConfig = useUpdateComposioConfig()
-  const { data: connections } = useComposioConnections()
-  const connectToolkit = useConnectToolkit()
-  const disconnectToolkit = useDisconnectToolkit()
-  const [composioApiKey, setComposioApiKey] = useState('')
-  const [newToolkit, setNewToolkit] = useState('')
-  const [showAddToolkit, setShowAddToolkit] = useState(false)
-  const [connectLink, setConnectLink] = useState<{ url: string; toolkit: string } | null>(null)
 
   const dbData = health?.entries?.database?.data
   const totalNotes = Number(dbData?.total_notes ?? 0)
@@ -212,174 +218,111 @@ export function SettingsPage() {
 
       <Separator className="my-6" />
 
+      {/* Substack */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium">Substack</h2>
+        <p className="text-sm text-muted-foreground">
+          Configure your Substack account to publish blog posts directly.
+        </p>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Substack subdomain</label>
+            <input
+              type="text"
+              value={substackSubdomain}
+              onChange={(e) => setSubstackSubdomain(e.target.value)}
+              placeholder="mysite"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            {substackSubdomain && (
+              <p className="text-xs text-muted-foreground">{substackSubdomain}.substack.com</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Email</label>
+            <input
+              type="text"
+              value={substackEmail}
+              onChange={(e) => setSubstackEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              Password
+              {substackConfig?.passwordSet && (
+                <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                  <Check className="h-3 w-3" />
+                  Password saved
+                </span>
+              )}
+            </label>
+            <input
+              type="password"
+              value={substackPassword}
+              onChange={(e) => setSubstackPassword(e.target.value)}
+              placeholder={substackConfig?.passwordSet ? 'Update password...' : 'Enter password...'}
+              className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={updateSubstack.isPending}
+            onClick={() => {
+              const data: { email?: string; password?: string; subdomain?: string } = {}
+              if (substackSubdomain) data.subdomain = substackSubdomain
+              if (substackEmail) data.email = substackEmail
+              if (substackPassword) data.password = substackPassword
+              updateSubstack.mutate(data, {
+                onSuccess: () => {
+                  toast.success('Substack settings saved')
+                  setSubstackPassword('')
+                },
+                onError: () => toast.error('Failed to save Substack settings'),
+              })
+            }}
+          >
+            {updateSubstack.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </section>
+
+      <Separator className="my-6" />
+
       {/* Composio MCP */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-1.5 text-sm font-medium">
           <Plug className="h-3.5 w-3.5" />
-          Composio MCP
+          Composio MCP Tools
         </h2>
         <p className="text-sm text-muted-foreground">
-          Connect external tools and services via Composio MCP protocol.
+          Enable external tool execution during AI chat via Composio MCP server.
+          When enabled, the AI can search, connect, and use 500+ app integrations.
         </p>
-
-        {/* Enable/disable toggle */}
-        <div className="flex items-center gap-3">
-          <Button
-            variant={composioConfig?.enabled ? 'default' : 'outline'}
-            size="sm"
-            className="gap-1.5"
-            onClick={() => {
-              updateConfig.mutate(
-                { enabled: !composioConfig?.enabled },
-                {
-                  onSuccess: () => toast.success(`Composio ${composioConfig?.enabled ? 'disabled' : 'enabled'}`),
-                  onError: () => toast.error('Failed to update Composio config'),
-                },
-              )
-            }}
-            disabled={updateConfig.isPending}
-          >
-            {composioConfig?.enabled ? <Plug className="h-3.5 w-3.5" /> : <Unplug className="h-3.5 w-3.5" />}
-            {composioConfig?.enabled ? 'Enabled' : 'Disabled'}
-          </Button>
-        </div>
-
-        {/* API Key */}
-        <div className="space-y-2">
-          <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Key className="h-3 w-3" />
-            API Key
-            {composioConfig?.apiKeySet && composioConfig.apiKeyMasked && (
-              <span className="font-mono text-foreground">{composioConfig.apiKeyMasked}</span>
-            )}
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={composioApiKey}
-              onChange={(e) => setComposioApiKey(e.target.value)}
-              placeholder={composioConfig?.apiKeySet ? 'Update API key...' : 'Enter API key...'}
-              className="flex-1 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!composioApiKey.trim() || updateConfig.isPending}
-              onClick={() => {
-                updateConfig.mutate(
-                  { apiKey: composioApiKey },
-                  {
-                    onSuccess: () => {
-                      toast.success('API key saved')
-                      setComposioApiKey('')
-                    },
-                    onError: () => toast.error('Failed to save API key'),
-                  },
-                )
-              }}
-            >
-              Save
-            </Button>
-          </div>
-        </div>
-
-        {/* Connected apps */}
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Connected Apps</p>
-          {connections && connections.length > 0 ? (
-            <div className="space-y-1.5">
-              {connections.map((conn) => (
-                <div key={conn.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Plug className="h-3.5 w-3.5 text-green-500" />
-                    <span className="font-medium">{conn.toolkit}</span>
-                    <span className="text-xs text-muted-foreground">{conn.status}</span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => {
-                      disconnectToolkit.mutate(conn.id, {
-                        onSuccess: () => toast.success(`Disconnected ${conn.toolkit}`),
-                        onError: () => toast.error('Failed to disconnect'),
-                      })
-                    }}
-                    disabled={disconnectToolkit.isPending}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No connected apps yet.</p>
-          )}
-        </div>
-
-        {/* Add connection */}
-        {showAddToolkit ? (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newToolkit}
-                onChange={(e) => setNewToolkit(e.target.value)}
-                placeholder="Toolkit name (e.g. github, slack, notion)"
-                className="flex-1 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!newToolkit.trim() || connectToolkit.isPending}
-                onClick={() => {
-                  connectToolkit.mutate(newToolkit.trim(), {
-                    onSuccess: (link) => {
-                      setConnectLink(link)
-                      setNewToolkit('')
-                      toast.success('Connect link generated')
-                    },
-                    onError: () => toast.error('Failed to generate connect link'),
-                  })
-                }}
-              >
-                {connectToolkit.isPending ? 'Generating...' : 'Generate Link'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowAddToolkit(false)
-                  setNewToolkit('')
-                  setConnectLink(null)
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-            {connectLink && (
-              <a
-                href={connectLink.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-2 text-sm text-foreground hover:underline"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Connect {connectLink.toolkit}
-              </a>
-            )}
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setShowAddToolkit(true)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add Connection
-          </Button>
-        )}
+        <Button
+          variant={composioConfig?.enabled ? 'default' : 'outline'}
+          size="sm"
+          className="gap-1.5"
+          onClick={() => {
+            updateConfig.mutate(
+              { enabled: !composioConfig?.enabled },
+              {
+                onSuccess: () => toast.success(`MCP tools ${composioConfig?.enabled ? 'disabled' : 'enabled'}`),
+                onError: () => toast.error('Failed to update config'),
+              },
+            )
+          }}
+          disabled={updateConfig.isPending}
+        >
+          {composioConfig?.enabled ? <Plug className="h-3.5 w-3.5" /> : <Unplug className="h-3.5 w-3.5" />}
+          {composioConfig?.enabled ? 'Enabled' : 'Disabled'}
+        </Button>
       </section>
 
       <Separator className="my-6" />

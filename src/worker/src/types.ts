@@ -11,6 +11,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
   READWISE_ACCESS_TOKEN?: SecretsStoreSecret  // optional binding
+  // Browser Rendering binding
+  BROWSER: Fetcher
   // R2 media bucket
   MEDIA_BUCKET: R2Bucket
   // Queue bindings

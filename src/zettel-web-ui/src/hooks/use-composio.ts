@@ -2,11 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getComposioConfig,
   updateComposioConfig,
-  getComposioConnections,
-  getConnectLink,
-  deleteComposioConnection,
-  searchComposioTools,
-  executeComposioTool,
+  listMcpTools,
+  callMcpTool,
+  connectApp,
 } from '@/api/composio'
 
 export function useComposioConfig() {
@@ -27,39 +25,23 @@ export function useUpdateComposioConfig() {
   })
 }
 
-export function useComposioConnections() {
+export function useMcpTools() {
   return useQuery({
-    queryKey: ['composio', 'connections'],
-    queryFn: getComposioConnections,
-    staleTime: 30_000,
+    queryKey: ['composio', 'tools'],
+    queryFn: listMcpTools,
+    staleTime: 60_000,
   })
 }
 
-export function useConnectToolkit() {
+export function useCallMcpTool() {
   return useMutation({
-    mutationFn: (toolkit: string) => getConnectLink(toolkit),
+    mutationFn: ({ name, args }: { name: string; args: Record<string, unknown> }) =>
+      callMcpTool(name, args),
   })
 }
 
-export function useDisconnectToolkit() {
-  const qc = useQueryClient()
+export function useConnectApp() {
   return useMutation({
-    mutationFn: deleteComposioConnection,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['composio', 'connections'] })
-    },
-  })
-}
-
-export function useSearchTools() {
-  return useMutation({
-    mutationFn: (query: string) => searchComposioTools(query),
-  })
-}
-
-export function useExecuteTool() {
-  return useMutation({
-    mutationFn: ({ tool, params }: { tool: string; params: Record<string, unknown> }) =>
-      executeComposioTool(tool, params),
+    mutationFn: (app: string) => connectApp(app),
   })
 }

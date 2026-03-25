@@ -26,12 +26,17 @@ export function useAutosave(
   const [draftSavedRecently, setDraftSavedRecently] = useState(false)
   const indicatorTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
 
+  // Synchronous snapshot of the last resolved content string.
+  // Updated by every interval autosave so beforeunload can persist it without awaiting.
+  const contentSnapshotRef = useRef('')
+
   // Skip autosave for existing notes (noteId === '__skip__')
   const shouldSkip = noteId === '__skip__'
 
   const saveDraft = useCallback(async () => {
     if (shouldSkip) return
     const contentStr = typeof content === 'function' ? await content() : content
+    contentSnapshotRef.current = contentStr
     if (!title && !contentStr) return
     const draft: Draft = { title, content: contentStr, tags, savedAt: Date.now() }
     localStorage.setItem(draftKey(noteId), JSON.stringify(draft))
@@ -53,18 +58,21 @@ export function useAutosave(
     }
   }, [saveDraft, shouldSkip])
 
-  // Save on beforeunload
+  // Save on beforeunload — uses synchronous snapshot to guarantee persistence
   useEffect(() => {
     if (shouldSkip) return
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      saveDraft()
-      if (title || content) {
+      // Synchronous write using last-known content snapshot
+      const contentStr = contentSnapshotRef.current
+      if (title || contentStr) {
+        const draft: Draft = { title, content: contentStr, tags, savedAt: Date.now() }
+        localStorage.setItem(draftKey(noteId), JSON.stringify(draft))
         e.preventDefault()
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [saveDraft, title, content, shouldSkip])
+  }, [title, tags, noteId, shouldSkip])
 
   // Clean up indicator timer on unmount
   useEffect(() => {

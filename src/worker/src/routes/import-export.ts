@@ -1,8 +1,11 @@
 import { Hono } from 'hono'
-import { desc } from 'drizzle-orm'
-import type { HonoEnv } from '../types'
+import { desc, eq } from 'drizzle-orm'
+import type { HonoEnv, Env } from '../types'
 import { makeId, isoNow } from '../types'
 import { notes, noteTags } from '../db/schema'
+import { chatCompletion } from '../services/llm'
+import { stripCodeFences } from '../services/llm'
+import { createDb } from '../db/client'
 
 const router = new Hono<HonoEnv>()
 
@@ -191,6 +194,38 @@ function parseMarkdownFile(fileName: string, content: string): ParsedNote {
   }
 }
 
+// ── Auto-tag via AI ─────────────────────────────────────────────────────────
+
+async function autoTagNote(
+  env: Env,
+  noteId: string,
+  title: string,
+  content: string,
+): Promise<void> {
+  const db = createDb(env.d1_db)
+  try {
+    const raw = await chatCompletion(env, {
+      messages: [
+        {
+          role: 'system',
+          content: 'Generate 2-5 concise tags for the following note. Return a JSON object with a "tags" array of lowercase strings. No hashtags.',
+        },
+        { role: 'user', content: `Title: ${title}\n\n${content.slice(0, 1500)}` },
+      ],
+      responseFormat: { type: 'json_object' },
+      maxTokens: 150,
+      temperature: 0.3,
+    })
+    const parsed = JSON.parse(stripCodeFences(raw || '{}'))
+    const tags: string[] = (parsed.tags ?? []).filter((t: unknown) => typeof t === 'string' && t.length > 0).slice(0, 5)
+    if (tags.length > 0) {
+      await db.insert(noteTags).values(tags.map(tag => ({ noteId, tag }))).onConflictDoNothing()
+    }
+  } catch (err) {
+    console.warn(`[import] Auto-tag failed for ${noteId}:`, err)
+  }
+}
+
 // GET /api/export — export all notes as JSON
 router.get('/', async (c) => {
   const db = c.get('db')
@@ -260,6 +295,9 @@ router.post('/', async (c) => {
 
         if (parsed.tags.length) {
           await db.insert(noteTags).values(parsed.tags.map(tag => ({ noteId: id, tag })))
+        } else {
+          // Auto-generate tags in the background
+          c.executionCtx.waitUntil(autoTagNote(c.env, id, parsed.title, parsed.content))
         }
 
         // Queue send is best-effort: don't fail the whole import if it errors
@@ -329,6 +367,8 @@ router.post('/', async (c) => {
 
       if (n.tags?.length) {
         await db.insert(noteTags).values(n.tags.map(tag => ({ noteId: id, tag })))
+      } else {
+        c.executionCtx.waitUntil(autoTagNote(c.env, id, n.title, n.content))
       }
 
       await c.env.EMBED_QUEUE.send({ noteId: id })

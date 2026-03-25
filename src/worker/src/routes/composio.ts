@@ -5,68 +5,72 @@ import { appSettings } from '../db/schema'
 
 const router = new Hono<HonoEnv>()
 
-const COMPOSIO_BASE = 'https://api.composio.dev'
-const USER_ID = 'zettel-user'
+// ── Composio MCP remote server config ────────────────────────────────────────
+
+const MCP_URL = 'https://connect.composio.dev/mcp'
+const MCP_API_KEY = 'ck_E31ySYYQVEKY5hUVYrCP'
+
+const MCP_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json',
+  'x-consumer-api-key': MCP_API_KEY,
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getApiKey(db: ReturnType<typeof import('../db/client').createDb>): Promise<string | undefined> {
-  const row = await db.select().from(appSettings).where(eq(appSettings.key, 'composio:apiKey')).get()
-  return row?.value
-}
+type Db = ReturnType<typeof import('../db/client').createDb>
 
-async function getSetting(db: ReturnType<typeof import('../db/client').createDb>, key: string): Promise<string | undefined> {
+async function getSetting(db: Db, key: string): Promise<string | undefined> {
   const row = await db.select().from(appSettings).where(eq(appSettings.key, key)).get()
   return row?.value
 }
 
-async function upsertSetting(db: ReturnType<typeof import('../db/client').createDb>, key: string, value: string) {
+async function upsertSetting(db: Db, key: string, value: string) {
   await db.insert(appSettings)
     .values({ key, value })
     .onConflictDoUpdate({ target: appSettings.key, set: { value } })
 }
 
-function maskKey(key: string): string {
-  if (key.length <= 8) return '****'
-  return key.slice(0, 4) + '****' + key.slice(-4)
+let mcpRequestId = 0
+function nextId() { return ++mcpRequestId }
+
+/** Send a JSON-RPC request to the Composio MCP server. */
+async function mcpCall(method: string, params?: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: MCP_HEADERS,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: nextId(),
+      method,
+      params: params ?? {},
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`MCP ${method} failed (${res.status}): ${text}`)
+  }
+
+  const data = await res.json<{ result?: unknown; error?: { message?: string } }>()
+  if (data.error) {
+    throw new Error(`MCP ${method} error: ${data.error.message ?? JSON.stringify(data.error)}`)
+  }
+  return data.result
 }
 
-async function getMcpConfig(db: ReturnType<typeof import('../db/client').createDb>) {
-  const [url, headers] = await Promise.all([
-    getSetting(db, 'composio:mcpUrl'),
-    getSetting(db, 'composio:mcpHeaders'),
-  ])
-  return { url, headers: headers ? JSON.parse(headers) : undefined }
-}
-
-// ── GET /config — get saved config (masked key + enabled status) ─────────
+// ── GET /config — enabled status ─────────────────────────────────────────────
 
 router.get('/config', async (c) => {
   const db = c.get('db')
-  const [apiKey, enabled] = await Promise.all([
-    getApiKey(db),
-    getSetting(db, 'composio:enabled'),
-  ])
-
-  return c.json({
-    hasApiKey: !!apiKey,
-    apiKeyMasked: apiKey ? maskKey(apiKey) : null,
-    enabled: enabled === 'true',
-  })
+  const enabled = await getSetting(db, 'composio:enabled')
+  return c.json({ enabled: enabled === 'true' })
 })
 
-// ── PUT /config — save API key, enable/disable ──────────────────────────
+// ── PUT /config — enable/disable ─────────────────────────────────────────────
 
 router.put('/config', async (c) => {
   const db = c.get('db')
-  const body = await c.req.json<{ apiKey?: string; enabled?: boolean }>()
-
-  if (body.apiKey !== undefined) {
-    if (!body.apiKey) {
-      return c.json({ error: 'apiKey must not be empty' }, 400)
-    }
-    await upsertSetting(db, 'composio:apiKey', body.apiKey)
-  }
+  const body = await c.req.json<{ enabled?: boolean }>()
 
   if (body.enabled !== undefined) {
     await upsertSetting(db, 'composio:enabled', String(body.enabled))
@@ -75,213 +79,56 @@ router.put('/config', async (c) => {
   return c.json({ ok: true })
 })
 
-// ── POST /session — create a Composio session, return MCP URL + headers ──
+// ── GET /tools — list available MCP tools ────────────────────────────────────
 
-router.post('/session', async (c) => {
-  const db = c.get('db')
-  const apiKey = await getApiKey(db)
-  if (!apiKey) return c.json({ error: 'Composio API key not configured' }, 400)
-
-  const res = await fetch(`${COMPOSIO_BASE}/api/v1/sessions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-    },
-    body: JSON.stringify({ user_id: USER_ID }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Composio session creation failed: ${text}` }, res.status as any)
+router.get('/tools', async (c) => {
+  try {
+    const result = await mcpCall('tools/list') as { tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> }
+    return c.json({ tools: result?.tools ?? [] })
+  } catch (err) {
+    console.error('[composio] tools/list failed:', err)
+    return c.json({ error: err instanceof Error ? err.message : 'Failed to list tools' }, 500)
   }
-
-  const data = await res.json<{
-    session_id: string
-    mcp: { url: string; headers: Record<string, string> }
-  }>()
-
-  // Persist session info
-  await Promise.all([
-    upsertSetting(db, 'composio:sessionId', data.session_id),
-    upsertSetting(db, 'composio:mcpUrl', data.mcp.url),
-    upsertSetting(db, 'composio:mcpHeaders', JSON.stringify(data.mcp.headers)),
-  ])
-
-  return c.json({
-    sessionId: data.session_id,
-    mcp: data.mcp,
-  })
 })
 
-// ── POST /tools/search — proxy COMPOSIO_SEARCH_TOOLS ────────────────────
+// ── POST /tools/call — execute an MCP tool ───────────────────────────────────
 
-router.post('/tools/search', async (c) => {
-  const db = c.get('db')
-  const mcp = await getMcpConfig(db)
-  if (!mcp.url) return c.json({ error: 'No active Composio session. Create one first.' }, 400)
+router.post('/tools/call', async (c) => {
+  const body = await c.req.json<{ name: string; arguments?: Record<string, unknown> }>()
+  if (!body.name) return c.json({ error: 'name is required' }, 400)
 
-  const body = await c.req.json<{ query: string }>()
-  if (!body.query) return c.json({ error: 'query is required' }, 400)
-
-  const res = await fetch(mcp.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...mcp.headers },
-    body: JSON.stringify({
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_SEARCH_TOOLS',
-        arguments: { query: body.query },
-      },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Tool search failed: ${text}` }, res.status as any)
+  try {
+    const result = await mcpCall('tools/call', {
+      name: body.name,
+      arguments: body.arguments ?? {},
+    })
+    return c.json({ result })
+  } catch (err) {
+    console.error(`[composio] tools/call ${body.name} failed:`, err)
+    return c.json({ error: err instanceof Error ? err.message : 'Tool call failed' }, 500)
   }
-
-  const data = await res.json()
-  return c.json(data)
 })
 
-// ── POST /tools/schema — proxy COMPOSIO_GET_TOOL_SCHEMAS ────────────────
-
-router.post('/tools/schema', async (c) => {
-  const db = c.get('db')
-  const mcp = await getMcpConfig(db)
-  if (!mcp.url) return c.json({ error: 'No active Composio session. Create one first.' }, 400)
-
-  const body = await c.req.json<{ tools: string[] }>()
-  if (!body.tools?.length) return c.json({ error: 'tools array is required' }, 400)
-
-  const res = await fetch(mcp.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...mcp.headers },
-    body: JSON.stringify({
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_GET_TOOL_SCHEMAS',
-        arguments: { tools: body.tools },
-      },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Get tool schemas failed: ${text}` }, res.status as any)
-  }
-
-  const data = await res.json()
-  return c.json(data)
-})
-
-// ── POST /tools/execute — proxy COMPOSIO_MULTI_EXECUTE_TOOL ─────────────
-
-router.post('/tools/execute', async (c) => {
-  const db = c.get('db')
-  const mcp = await getMcpConfig(db)
-  if (!mcp.url) return c.json({ error: 'No active Composio session. Create one first.' }, 400)
-
-  const body = await c.req.json<{ tool: string; arguments: Record<string, unknown> }>()
-  if (!body.tool) return c.json({ error: 'tool is required' }, 400)
-
-  const res = await fetch(mcp.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...mcp.headers },
-    body: JSON.stringify({
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-        arguments: { tool: body.tool, arguments: body.arguments ?? {} },
-      },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Tool execution failed: ${text}` }, res.status as any)
-  }
-
-  const data = await res.json()
-  return c.json(data)
-})
-
-// ── POST /connect — proxy COMPOSIO_MANAGE_CONNECTIONS (get connect link) ─
+// ── POST /connect — get a connect link for an app ────────────────────────────
 
 router.post('/connect', async (c) => {
-  const db = c.get('db')
-  const mcp = await getMcpConfig(db)
-  if (!mcp.url) return c.json({ error: 'No active Composio session. Create one first.' }, 400)
-
   const body = await c.req.json<{ app: string; redirect_url?: string }>()
   if (!body.app) return c.json({ error: 'app is required' }, 400)
 
-  const res = await fetch(mcp.url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...mcp.headers },
-    body: JSON.stringify({
-      method: 'tools/call',
-      params: {
-        name: 'COMPOSIO_MANAGE_CONNECTIONS',
-        arguments: {
-          action: 'initiate',
-          app: body.app,
-          redirect_url: body.redirect_url,
-        },
+  try {
+    const result = await mcpCall('tools/call', {
+      name: 'COMPOSIO_MANAGE_CONNECTIONS',
+      arguments: {
+        action: 'initiate',
+        app: body.app,
+        redirect_url: body.redirect_url,
       },
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Connect failed: ${text}` }, res.status as any)
+    })
+    return c.json({ result })
+  } catch (err) {
+    console.error('[composio] connect failed:', err)
+    return c.json({ error: err instanceof Error ? err.message : 'Connect failed' }, 500)
   }
-
-  const data = await res.json()
-  return c.json(data)
-})
-
-// ── GET /connections — list active connections ───────────────────────────
-
-router.get('/connections', async (c) => {
-  const db = c.get('db')
-  const apiKey = await getApiKey(db)
-  if (!apiKey) return c.json({ error: 'Composio API key not configured' }, 400)
-
-  const res = await fetch(`${COMPOSIO_BASE}/api/v1/connectedAccounts?user_uuid=${USER_ID}`, {
-    headers: { 'x-api-key': apiKey },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Failed to list connections: ${text}` }, res.status as any)
-  }
-
-  const data = await res.json()
-  return c.json(data)
-})
-
-// ── DELETE /connections/:id — disconnect a connection ────────────────────
-
-router.delete('/connections/:id', async (c) => {
-  const db = c.get('db')
-  const apiKey = await getApiKey(db)
-  if (!apiKey) return c.json({ error: 'Composio API key not configured' }, 400)
-
-  const id = c.req.param('id')
-
-  const res = await fetch(`${COMPOSIO_BASE}/api/v1/connectedAccounts/${id}`, {
-    method: 'DELETE',
-    headers: { 'x-api-key': apiKey },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    return c.json({ error: `Failed to disconnect: ${text}` }, res.status as any)
-  }
-
-  return c.json({ ok: true })
 })
 
 export default router

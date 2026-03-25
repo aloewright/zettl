@@ -9,6 +9,7 @@
     "build": "cd ../zettel-web-ui && npm ci && npm run build"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.6",
     "ai": "^6.0.138",
     "ai-gateway-provider": "^3.1.2",
     "drizzle-orm": "^0.45.1",

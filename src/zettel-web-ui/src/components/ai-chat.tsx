@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Mic, MicOff, Paperclip, X, Loader2, Bot, User, Plug, Search } from 'lucide-react'
+import { Send, Mic, MicOff, Paperclip, X, Loader2, Bot, User, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { useComposioConfig, useSearchTools, useExecuteTool } from '@/hooks/use-composio'
-import type { ComposioTool } from '@/api/composio'
+import { useComposioConfig } from '@/hooks/use-composio'
 import { toast } from 'sonner'
 
 interface Message {
@@ -28,13 +26,8 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
-  // Composio tools
+  // Composio MCP config
   const { data: composioConfig } = useComposioConfig()
-  const searchTools = useSearchTools()
-  const executeTool = useExecuteTool()
-  const [toolSearchQuery, setToolSearchQuery] = useState('')
-  const [toolResults, setToolResults] = useState<ComposioTool[]>([])
-  const [toolsOpen, setToolsOpen] = useState(false)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -291,85 +284,9 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
               {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </Button>
             {composioConfig?.enabled && (
-              <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground"
-                    title="Composio tools"
-                  >
-                    <Plug className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" side="top" className="w-72 p-3">
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium">Search Tools</p>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={toolSearchQuery}
-                        onChange={(e) => setToolSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && toolSearchQuery.trim()) {
-                            searchTools.mutate(toolSearchQuery.trim(), {
-                              onSuccess: (data) => setToolResults(data.tools),
-                              onError: () => toast.error('Tool search failed'),
-                            })
-                          }
-                        }}
-                        placeholder="e.g. github, slack..."
-                        className="flex-1 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        disabled={!toolSearchQuery.trim() || searchTools.isPending}
-                        onClick={() => {
-                          searchTools.mutate(toolSearchQuery.trim(), {
-                            onSuccess: (data) => setToolResults(data.tools),
-                            onError: () => toast.error('Tool search failed'),
-                          })
-                        }}
-                      >
-                        {searchTools.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
-                      </Button>
-                    </div>
-                    {toolResults.length > 0 && (
-                      <div className="max-h-40 space-y-1 overflow-y-auto">
-                        {toolResults.map((tool) => (
-                          <button
-                            key={tool.name}
-                            className="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
-                            onClick={() => {
-                              executeTool.mutate(
-                                { tool: tool.name, params: {} },
-                                {
-                                  onSuccess: (result) => {
-                                    const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
-                                    setInput((prev) => prev + (prev ? '\n' : '') + `[Tool: ${tool.name}] ${resultStr}`)
-                                    setToolsOpen(false)
-                                    toast.success(`Executed ${tool.name}`)
-                                  },
-                                  onError: () => toast.error(`Failed to execute ${tool.name}`),
-                                },
-                              )
-                            }}
-                            disabled={executeTool.isPending}
-                          >
-                            <span className="font-medium">{tool.name}</span>
-                            <span className="text-muted-foreground line-clamp-1">{tool.description}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {searchTools.isPending && (
-                      <p className="text-center text-xs text-muted-foreground">Searching...</p>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              <span className="flex h-8 w-8 items-center justify-center text-green-500" title="MCP tools active">
+                <Plug className="h-4 w-4" />
+              </span>
             )}
           </div>
           <textarea

@@ -15,6 +15,7 @@ import {
   Send,
   AlertTriangle,
   ExternalLink,
+  BookOpen,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import { toast } from 'sonner'
 import { relativeDate } from '@/lib/format'
 import * as contentApi from '@/api/content'
 import { ApiError } from '@/api/client'
+import { usePublishToSubstack } from '@/hooks/use-substack'
 import type {
   ContentGeneration,
   ContentPiece,
@@ -150,6 +152,8 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
       }
     },
   })
+
+  const publishSubstack = usePublishToSubstack()
 
   const handleExport = useCallback(async () => {
     try {
@@ -317,6 +321,37 @@ const PieceCard = React.memo(function PieceCard({ piece }: { piece: ContentPiece
           <Download className="size-3" />
           Export
         </Button>
+        {isBlog && (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              publishSubstack.mutate(
+                { title: piece.title ?? '', body: piece.body },
+                {
+                  onSuccess: (result) => {
+                    if (result.success && result.url) {
+                      toast.success('Published to Substack', { description: result.url })
+                      window.open(result.url, '_blank')
+                    } else {
+                      toast.error('Substack publish failed', { description: result.error })
+                    }
+                  },
+                  onError: () => toast.error('Failed to publish to Substack'),
+                },
+              )
+            }}
+            disabled={publishSubstack.isPending}
+            className="gap-1 text-muted-foreground"
+          >
+            {publishSubstack.isPending ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <BookOpen className="size-3" />
+            )}
+            Substack
+          </Button>
+        )}
         {!alreadySent ? (
           <Button
             variant="ghost"
