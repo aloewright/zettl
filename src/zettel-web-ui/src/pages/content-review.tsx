@@ -479,6 +479,13 @@ function GenerationCard({ generation }: { generation: ContentGeneration }) {
           </Button>
         </div>
       </div>
+      {(detailQuery.data?.llmModel || generation.llmModel) && (
+        <div className="flex justify-end px-4 pb-2 -mt-2">
+          <span className="text-[10px] font-mono text-muted-foreground/60">
+            {detailQuery.data?.llmModel ?? generation.llmModel}
+          </span>
+        </div>
+      )}
 
       {expanded && (
         <div className="border-t border-border/50 px-4 py-4">

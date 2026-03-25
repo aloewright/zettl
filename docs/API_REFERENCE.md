@@ -537,7 +537,7 @@ Convert text to speech. Returns raw audio bytes.
 
 ---
 
-### `POST /api/tts/transcribe`
+### `POST /api/stt`
 Transcribe audio to text. Accepts raw audio binary (`Content-Type: application/octet-stream`) or JSON with base64-encoded audio.
 
 **JSON body (alternative):**

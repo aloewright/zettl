@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react'
-import { useCreateBlockNote } from '@blocknote/react'
-import { BlockNoteView } from '@blocknote/shadcn'
-import '@blocknote/shadcn/style.css'
+import { useCallback } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { Pencil, Trash2, ArrowLeft, Network, BookOpen, ExternalLink, Sparkles, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { EmbedStatusBadge } from './embed-status-badge'
+import { WikiLinkView } from './wiki-link-view'
 import { ConfirmDialog } from './confirm-dialog'
 import { fullDate } from '@/lib/format'
 import { useDeleteNote } from '@/hooks/use-notes'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import * as contentApi from '@/api/content'
-import { parseStoredContent } from '@/lib/blocknote'
 import type { Note } from '@/api/types'
 
 interface NoteViewProps {
@@ -24,7 +21,6 @@ interface NoteViewProps {
 export function NoteView({ note }: NoteViewProps) {
   const navigate = useNavigate()
   const deleteNote = useDeleteNote()
-  const contentLoadedRef = useRef(false)
 
   const generateContent = useMutation({
     mutationFn: () => contentApi.triggerGenerationFromNote(note.id),
@@ -36,17 +32,6 @@ export function NoteView({ note }: NoteViewProps) {
     },
     onError: () => toast.error('Failed to generate content'),
   })
-
-  const editor = useCreateBlockNote()
-
-  // Load HTML content into read-only BlockNote editor
-  useEffect(() => {
-    if (!editor || contentLoadedRef.current) return
-    if (note.content) {
-      contentLoadedRef.current = true
-      parseStoredContent(editor, note.content)
-    }
-  }, [editor, note.content])
 
   const handleDelete = () => {
     deleteNote.mutate(note.id, {
@@ -153,10 +138,9 @@ export function NoteView({ note }: NoteViewProps) {
 
       <Separator className="my-6" />
 
-      <BlockNoteView
-        editor={editor}
-        editable={false}
-        theme="dark"
+      <WikiLinkView
+        html={note.content}
+        className="note-content text-sm leading-relaxed"
       />
 
       <Separator className="my-8" />

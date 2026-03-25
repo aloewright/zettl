@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { Network, BookOpen } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { WikiLinkView } from './wiki-link-view'
 import { relativeDate, truncateContent } from '@/lib/format'
 import type { Note } from '@/api/types'
 
@@ -36,9 +37,10 @@ export function NoteListItem({ note, onTagClick }: NoteListItemProps) {
             </p>
           )}
           {note.content && (
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              {truncateContent(note.content)}
-            </p>
+            <WikiLinkView
+              html={truncateContent(note.content)}
+              className="mt-1 text-sm leading-relaxed text-muted-foreground"
+            />
           )}
           {note.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">

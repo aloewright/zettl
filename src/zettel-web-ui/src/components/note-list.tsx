@@ -1,5 +1,6 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { ArrowUpDown, ChevronLeft, ChevronRight, Tag, X } from 'lucide-react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { ArrowUpDown, Tag, X, Loader2 } from 'lucide-react'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -12,7 +13,7 @@ import {
 import { NoteListItem } from './note-list-item'
 import { NoteEmpty } from './note-empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useNotes } from '@/hooks/use-notes'
+import { listNotes } from '@/api/notes'
 import type { Note, NoteType } from '@/api/types'
 
 type SortOption = 'updated' | 'created' | 'title'
@@ -47,90 +48,68 @@ function sortNotes(notes: Note[], sort: SortOption): Note[] {
   })
 }
 
-function VirtualizedNoteList({ notes, onTagClick, itemHeight, maxHeight }: {
-  notes: Note[]
-  onTagClick: (tag: string) => void
-  itemHeight: number
-  maxHeight: number
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: Math.min(10, notes.length) })
-  
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    
-    const handleScroll = () => {
-      if (!container) return
-      const scrollTop = container.scrollTop
-      const startIndex = Math.floor(scrollTop / itemHeight)
-      const endIndex = Math.min(
-        startIndex + Math.ceil(maxHeight / itemHeight) + 1,
-        notes.length
-      )
-      setVisibleRange({ start: startIndex, end: endIndex })
-    }
-    
-    container.addEventListener('scroll', handleScroll)
-    handleScroll() // Initialize
-    
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [notes.length, itemHeight, maxHeight])
-  
-  const visibleNotes = notes.slice(visibleRange.start, visibleRange.end)
-  const paddingTop = visibleRange.start * itemHeight
-  const paddingBottom = Math.max(0, (notes.length - visibleRange.end) * itemHeight)
-  
-  return (
-    <div
-      ref={containerRef}
-      style={{ height: `${Math.min(maxHeight, notes.length * itemHeight)}px`, overflowY: 'auto', width: '100%' }}
-    >
-      <div style={{ paddingTop: `${paddingTop}px`, paddingBottom: `${paddingBottom}px` }}>
-        {visibleNotes.map((note) => (
-          <NoteListItem
-            key={note.id}
-            note={note}
-            onTagClick={onTagClick}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export function NoteList() {
-  const [skip, setSkip] = useState(0)
   const [sort, setSort] = useState<SortOption>('updated')
   const [tagFilter, setTagFilter] = useState<string | undefined>(undefined)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(undefined)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
-  const { data, isLoading } = useNotes(skip, PAGE_SIZE, tagFilter, typeFilter)
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['notes', { tag: tagFilter, noteType: typeFilter }],
+    queryFn: ({ pageParam = 0 }) => listNotes(pageParam, PAGE_SIZE, tagFilter, typeFilter),
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0)
+      return loaded < lastPage.totalCount ? loaded : undefined
+    },
+    initialPageParam: 0,
+  })
 
-  const notes = data?.items
-  const totalCount = data?.totalCount ?? 0
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
 
-  const sorted = useMemo(
-    () => (notes ? sortNotes(notes, sort) : []),
-    [notes, sort],
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: '200px' },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const allNotes = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
   )
 
-  const hasPrevious = skip > 0
-  const hasNext = skip + PAGE_SIZE < totalCount
+  const totalCount = data?.pages[0]?.totalCount ?? 0
 
-  function handleTagClick(tag: string) {
+  const sorted = useMemo(
+    () => sortNotes(allNotes, sort),
+    [allNotes, sort],
+  )
+
+  const handleTagClick = useCallback((tag: string) => {
     setTagFilter(tag)
-    setSkip(0)
-  }
+  }, [])
 
   function clearTagFilter() {
     setTagFilter(undefined)
-    setSkip(0)
   }
 
   function handleTypeFilter(value: TypeFilter) {
     setTypeFilter(value)
-    setSkip(0)
   }
 
   if (isLoading) {
@@ -146,7 +125,7 @@ export function NoteList() {
     )
   }
 
-  if (!notes || (notes.length === 0 && !tagFilter && !typeFilter)) {
+  if (allNotes.length === 0 && !tagFilter && !typeFilter) {
     return <NoteEmpty />
   }
 
@@ -203,7 +182,7 @@ export function NoteList() {
         </DropdownMenu>
       </div>
 
-      {notes.length === 0 && hasActiveFilter ? (
+      {allNotes.length === 0 && hasActiveFilter ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Tag className="h-8 w-8 text-muted-foreground/40" />
           <p className="mt-3 text-sm text-muted-foreground">
@@ -225,43 +204,24 @@ export function NoteList() {
           </Button>
         </div>
       ) : (
-        <>
-          <div className="divide-y divide-border/50">
-            <VirtualizedNoteList
-              notes={sorted}
+        <div className="divide-y divide-border/50">
+          {sorted.map((note) => (
+            <NoteListItem
+              key={note.id}
+              note={note}
               onTagClick={handleTagClick}
-              itemHeight={80}
-              maxHeight={600}
             />
-          </div>
-          {(hasPrevious || hasNext) && (
-            <div className="mt-4 flex items-center justify-between">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!hasPrevious}
-                onClick={() => setSkip((prev) => Math.max(0, prev - PAGE_SIZE))}
-                className="gap-1"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                {skip + 1}&ndash;{Math.min(skip + PAGE_SIZE, totalCount)} of {totalCount}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!hasNext}
-                onClick={() => setSkip((prev) => prev + PAGE_SIZE)}
-                className="gap-1"
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          ))}
+
+          {/* Infinite scroll sentinel */}
+          <div ref={sentinelRef} className="h-px" />
+
+          {isFetchingNextPage && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   )

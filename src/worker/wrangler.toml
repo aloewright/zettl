@@ -28,9 +28,11 @@ database_id = "066cf08e-6dc2-4ab6-baa7-9e8396d59e6c"
 binding = "vector_db"
 index_name = "zettel-notes"
 
-# ── Workers AI ────────────────────────────────────────────────────────────────
-[ai]
-binding = "ai_binding"
+
+# ── Cloudflare R2 (media uploads) ─────────────────────────────────────────────
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "zettel-media"
 
 # ── Queues ────────────────────────────────────────────────────────────────────
 [[queues.consumers]]
@@ -62,17 +64,6 @@ crons = ["0 9 * * MON", "0 9 * * *"]
 # Secrets Store ID: e328ab1e3e624d24b1712d38aad51017
 
 [[secrets_store_secrets]]
-binding = "OPENROUTER_API_KEY"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "OPENROUTER_API_KEY"
-
-# GOOGLE_API_KEY — uncomment after creating the secret in the Secrets Store
-# [[secrets_store_secrets]]
-# binding = "GOOGLE_API_KEY"
-# store_id = "e328ab1e3e624d24b1712d38aad51017"
-# secret_name = "GOOGLE_API_KEY"
-
-[[secrets_store_secrets]]
 binding = "BRAVE_API_KEY"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "BRAVE_API_KEY"
@@ -82,7 +73,3 @@ binding = "READWISE_ACCESS_TOKEN"
 store_id = "e328ab1e3e624d24b1712d38aad51017"
 secret_name = "READWISE_ACCESS_TOKEN"
 
-[[secrets_store_secrets]]
-binding = "ELEVENLABS_API_KEY"
-store_id = "e328ab1e3e624d24b1712d38aad51017"
-secret_name = "ELEVENLABS_API_KEY"

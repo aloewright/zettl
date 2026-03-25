@@ -38,6 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { WikiLinkView } from '@/components/wiki-link-view'
 import { useInbox, usePromoteNote, useMergeNote } from '@/hooks/use-inbox'
 import { useDeleteNote } from '@/hooks/use-notes'
 import { relativeDate, truncateContent } from '@/lib/format'
@@ -227,9 +228,10 @@ function InboxItem({ note, selected, onToggleSelect }: InboxItemProps) {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium truncate">{displayTitle(note)}</p>
               {note.content && (
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  {truncateContent(note.content, 200)}
-                </p>
+                <WikiLinkView
+                  html={truncateContent(note.content, 200)}
+                  className="mt-1 text-sm leading-relaxed text-muted-foreground"
+                />
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {note.tags.length > 0 &&

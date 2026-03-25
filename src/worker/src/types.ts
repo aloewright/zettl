@@ -5,18 +5,14 @@ export interface Env {
   d1_db: D1Database
   // Cloudflare Vectorize index binding
   vector_db: VectorizeIndex
-  // Workers AI binding
-  ai_binding: Ai
-  // Cloudflare Secrets Store bindings — access via await env.X.get()
-  OPENROUTER_API_KEY?: SecretsStoreSecret
-  GOOGLE_API_KEY?: SecretsStoreSecret
   CF_AI_GATEWAY_URL?: string // plain env var (not sensitive)
   CF_AIG_TOKEN?: string                       // AI Gateway auth token (wrangler secret)
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding
   READWISE_ACCESS_TOKEN?: SecretsStoreSecret  // optional binding
-  ELEVENLABS_API_KEY?: SecretsStoreSecret     // optional binding
+  // R2 media bucket
+  MEDIA_BUCKET: R2Bucket
   // Queue bindings
   EMBED_QUEUE: Queue<EmbedQueueMessage>
   ENRICH_QUEUE: Queue<EnrichQueueMessage>

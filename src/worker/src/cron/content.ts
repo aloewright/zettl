@@ -1,6 +1,7 @@
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import type { Env } from '../types'
 import { makeId, isoNow } from '../types'
+import { stripCodeFences } from '../services/llm'
 import * as schema from '../db/schema'
 import { createDb } from '../db/client'
 import { chatCompletion } from '../services/llm'
@@ -102,7 +103,7 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
     maxTokens: medium === 'Blog' ? 2000 : 800,
   })
 
-  const parsed = JSON.parse(raw || '{}')
+  const parsed = JSON.parse(stripCodeFences(raw || '{}'))
   return {
     topicSummary: parsed.topicSummary ?? 'Generated content',
     body: parsed.body ?? '',

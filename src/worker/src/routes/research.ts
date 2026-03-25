@@ -1,11 +1,156 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { eq, desc, and, sql, inArray } from 'drizzle-orm'
-import type { HonoEnv } from '../types'
+import type { HonoEnv, Env } from '../types'
 import { makeId, isoNow } from '../types'
+import { stripCodeFences } from '../services/llm'
 import { researchAgendas, researchTasks, researchFindings, notes } from '../db/schema'
+import { createDb } from '../db/client'
 import { chatCompletion } from '../services/llm'
 
 const router = new Hono<HonoEnv>()
+
+// ── Research execution ──────────────────────────────────────────────────────
+
+// ── Perplexity via AI Gateway (research_gen route) ──────────────────────────
+
+const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
+const GATEWAY_ID = 'x'
+
+async function perplexitySearch(
+  env: Env,
+  query: string,
+  motivation: string,
+): Promise<{ text: string; citations: string[] }> {
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/chat/completions`
+
+  const body = {
+    model: 'dynamic/research_gen',
+    messages: [
+      {
+        role: 'system',
+        content: `You are a research assistant for a Zettelkasten knowledge base.
+Search the web and produce 1-3 research findings for the given query.
+Each finding should be a concise, factual knowledge note suitable for a personal knowledge base.
+
+Return a JSON object with key "findings" containing an array. Each finding has:
+- "title": a clear descriptive title
+- "synthesis": a 2-4 paragraph synthesis in markdown
+- "sourceUrl": the most relevant source URL you found
+- "sourceType": "Web"
+
+Always respond with valid JSON.`,
+      },
+      {
+        role: 'user',
+        content: `Research query: ${query}\nMotivation: ${motivation}`,
+      },
+    ],
+    max_tokens: 1500,
+    temperature: 0.3,
+  }
+
+  const cfToken = env.CF_AIG_TOKEN
+
+  const res = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cfToken ? { 'cf-aig-authorization': `Bearer ${cfToken}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Perplexity via AI Gateway failed (${res.status}): ${errText}`)
+  }
+
+  const data = await res.json<{
+    choices?: Array<{ message?: { content?: string } }>
+    citations?: string[]
+  }>()
+
+  const text = data.choices?.[0]?.message?.content ?? ''
+  const citations = data.citations ?? []
+  return { text, citations }
+}
+
+async function executeTask(
+  env: Env,
+  db: ReturnType<typeof createDb>,
+  task: { id: string; query: string; sourceType: string; motivation: string },
+): Promise<void> {
+  console.log(`[research] Executing task via Perplexity: ${task.query}`)
+
+  const { text: raw, citations } = await perplexitySearch(env, task.query, task.motivation)
+
+  let findings: Array<{ title: string; synthesis: string; sourceUrl: string; sourceType: string }>
+  try {
+    const parsed = JSON.parse(stripCodeFences(raw || '{}'))
+    findings = parsed.findings ?? []
+  } catch {
+    // If Perplexity didn't return structured JSON, wrap the entire response as a single finding
+    console.warn(`[research] Perplexity returned non-JSON for task ${task.id}, wrapping as single finding`)
+    findings = [{
+      title: task.query,
+      synthesis: raw,
+      sourceUrl: citations[0] ?? '',
+      sourceType: 'Web',
+    }]
+  }
+
+  // Enrich sourceUrls from Perplexity citations if the finding has no URL
+  for (let i = 0; i < findings.length; i++) {
+    const finding = findings[i]
+    if (finding && !finding.sourceUrl && citations[i]) {
+      finding.sourceUrl = citations[i]!
+    }
+  }
+
+  for (const f of findings) {
+    await db.insert(researchFindings).values({
+      id: makeId(),
+      taskId: task.id,
+      title: f.title,
+      synthesis: f.synthesis,
+      sourceUrl: f.sourceUrl || '',
+      sourceType: f.sourceType || 'Web',
+      similarNoteIds: '[]',
+      duplicateSimilarity: null,
+      status: 'Pending',
+      createdAt: isoNow(),
+    })
+  }
+
+  await db.update(researchTasks).set({ status: 'Done' }).where(eq(researchTasks.id, task.id))
+  console.log(`[research] Task "${task.query}" produced ${findings.length} findings via Perplexity`)
+}
+
+/** Execute all non-blocked Pending tasks for an approved agenda. */
+async function executeAgenda(env: Env, agendaId: string): Promise<void> {
+  const db = createDb(env.d1_db)
+
+  const tasks = await db.select().from(researchTasks)
+    .where(and(
+      eq(researchTasks.agendaId, agendaId),
+      eq(researchTasks.status, 'Pending'),
+    ))
+
+  console.log(`[research] Executing ${tasks.length} tasks for agenda ${agendaId}`)
+
+  for (const task of tasks) {
+    try {
+      await executeTask(env, db, task)
+    } catch (err) {
+      console.error(`[research] Task ${task.id} failed:`, err)
+      await db.update(researchTasks).set({ status: 'Failed' }).where(eq(researchTasks.id, task.id))
+    }
+  }
+
+  await db.update(researchAgendas).set({ status: 'Done' }).where(eq(researchAgendas.id, agendaId))
+  console.log(`[research] Agenda ${agendaId} execution complete`)
+}
 
 // ── Trigger (AI-driven research agenda generation) ─────────────────────────────
 
@@ -43,26 +188,32 @@ router.post('/trigger', async (c) => {
     .map(n => `### ${n.title}\n${n.content.slice(0, 500)}`)
     .join('\n\n')
 
-  const raw = await chatCompletion(c.env, {
-    messages: [
-      {
-        role: 'system',
-        content: `You are a research assistant for a Zettelkasten knowledge base. Analyze the provided notes and identify knowledge gaps that could be filled through research.
+  let raw: string
+  try {
+    raw = await chatCompletion(c.env, {
+      messages: [
+        {
+          role: 'system',
+          content: `You are a research assistant for a Zettelkasten knowledge base. Analyze the provided notes and identify knowledge gaps that could be filled through research.
 
 Return a JSON object with key "tasks" containing an array of 3-5 research tasks. Each task should have:
 - "query": a specific search query
 - "sourceType": either "WebSearch" or "Arxiv"
 - "motivation": why this research would be valuable
 - "motivationNoteId": the ID of the note that inspired this task (from the provided notes)`,
-      },
-      {
-        role: 'user',
-        content: `Analyze these notes and suggest research tasks:\n\n${notesBlock}`,
-      },
-    ],
-    responseFormat: { type: 'json_object' },
-    maxTokens: 1000,
-  })
+        },
+        {
+          role: 'user',
+          content: `Analyze these notes and suggest research tasks:\n\n${notesBlock}`,
+        },
+      ],
+      responseFormat: { type: 'json_object' },
+      maxTokens: 1000,
+    })
+  } catch (err) {
+    console.error('[research] LLM call failed:', err)
+    return c.json({ error: `Research generation failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   let tasks: Array<{
     query: string
@@ -72,7 +223,7 @@ Return a JSON object with key "tasks" containing an array of 3-5 research tasks.
   }>
 
   try {
-    const parsed = JSON.parse(raw || '{}')
+    const parsed = JSON.parse(stripCodeFences(raw || '{}'))
     tasks = parsed.tasks ?? []
   } catch {
     tasks = []
@@ -179,10 +330,9 @@ router.post('/agendas', async (c) => {
   return c.json({ ...created, tasks }, 201)
 })
 
-// POST /api/research/agendas/:id/approve
-router.post('/agendas/:id/approve', async (c) => {
+// Shared approve logic — blocks tasks, sets status, triggers execution
+async function approveAgenda(c: Context<HonoEnv>, id: string) {
   const db = c.get('db')
-  const id = c.req.param('id')
   const body = await c.req.json<{ blockedTaskIds?: string[] }>().catch(() => ({ blockedTaskIds: [] }))
 
   const [existing] = await db.select().from(researchAgendas)
@@ -204,39 +354,19 @@ router.post('/agendas/:id/approve', async (c) => {
     }
   }
 
+  // Fire-and-forget: execute approved tasks in the background
+  c.executionCtx.waitUntil(executeAgenda(c.env, id))
+
   const [updated] = await db.select().from(researchAgendas)
     .where(eq(researchAgendas.id, id))
   return c.json(updated)
-})
+}
+
+// POST /api/research/agendas/:id/approve
+router.post('/agendas/:id/approve', async (c) => approveAgenda(c, c.req.param('id')))
 
 // POST /api/research/agenda/:id/approve — singular alias for frontend compatibility
-router.post('/agenda/:id/approve', async (c) => {
-  const db = c.get('db')
-  const id = c.req.param('id')
-  const body = await c.req.json<{ blockedTaskIds?: string[] }>().catch(() => ({ blockedTaskIds: [] }))
-
-  const [existing] = await db.select().from(researchAgendas)
-    .where(eq(researchAgendas.id, id))
-  if (!existing) return c.json({ error: 'Not found' }, 404)
-
-  await db.update(researchAgendas).set({
-    status: 'Approved',
-    approvedAt: isoNow(),
-  }).where(eq(researchAgendas.id, id))
-
-  if (body.blockedTaskIds?.length) {
-    for (const taskId of body.blockedTaskIds) {
-      await db.update(researchTasks).set({
-        status: 'Blocked',
-        blockedAt: isoNow(),
-      }).where(eq(researchTasks.id, taskId))
-    }
-  }
-
-  const [updated] = await db.select().from(researchAgendas)
-    .where(eq(researchAgendas.id, id))
-  return c.json(updated)
-})
+router.post('/agenda/:id/approve', async (c) => approveAgenda(c, c.req.param('id')))
 
 router.delete('/agendas/:id', async (c) => {
   const db = c.get('db')

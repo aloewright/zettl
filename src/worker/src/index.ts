@@ -14,8 +14,10 @@ import researchRouter from './routes/research'
 import importExportRouter from './routes/import-export'
 import readwiseRouter from './routes/readwise'
 import ttsRouter from './routes/tts'
+import sttRouter from './routes/stt'
 import settingsRouter from './routes/settings'
 import generateRouter from './routes/generate'
+import uploadRouter from './routes/upload'
 import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
@@ -61,8 +63,26 @@ app.route('/api/export', importExportRouter)
 app.route('/api/import', importExportRouter)
 app.route('/api/readwise', readwiseRouter)
 app.route('/api/tts', ttsRouter)
+app.route('/api/stt', sttRouter)
 app.route('/api/settings', settingsRouter)
 app.route('/api/generate', generateRouter)
+app.route('/api/upload', uploadRouter)
+
+// ── Media serving (R2) ───────────────────────────────────────────────────────
+
+app.get('/media/*', async (c) => {
+  const key = c.req.path.slice('/media/'.length)
+  if (!key) return c.json({ error: 'Not found' }, 404)
+
+  const object = await c.env.MEDIA_BUCKET.get(key)
+  if (!object) return c.json({ error: 'Not found' }, 404)
+
+  const headers = new Headers()
+  headers.set('Content-Type', object.httpMetadata?.contentType ?? 'application/octet-stream')
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+
+  return new Response(object.body, { headers })
+})
 
 // /api/discover — alias for /api/notes/discover
 app.get('/api/discover', async (c) => {

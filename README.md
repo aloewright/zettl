@@ -6,7 +6,7 @@ the web, email, or Telegram; find connections between ideas using
 meaning-based search; and automatically generate blog posts and social
 media drafts from your knowledge graph.
 
-Built on **Cloudflare Workers + D1 + Vectorize + AI Gateway**, with a
+Built on **Cloudflare Workers + D1 + Vectorize + R2 + AI Gateway**, with a
 React frontend served as Static Assets. Authentication is handled by
 Cloudflare Access (Google OAuth -- no separate auth service needed).
 
@@ -28,7 +28,7 @@ Cloudflare Access (Google OAuth -- no separate auth service needed).
 
 ## Features
 
-- **Semantic search** -- Hybrid search combining vector similarity (Workers AI + Vectorize)
+- **Semantic search** -- Hybrid search combining vector similarity (Perplexity embeddings via AI Gateway + Vectorize)
   and SQLite full-text ranking; tunable weights
 - **Zettelkasten workflow** -- Permanent notes, fleeting notes (quick capture), structure
   notes (organising), and source notes (with bibliography metadata)
@@ -45,11 +45,13 @@ Cloudflare Access (Google OAuth -- no separate auth service needed).
 - **Automated content generation** -- Cron-scheduled pipeline (Monday blog, daily social)
   that mines your knowledge graph and generates drafts in your voice for human review
 - **Publishing** -- Send approved pieces to GitHub (Astro blog) or Publer (social)
-- **Autonomous research agent** -- Analyses KB gaps, queries Brave Search and Arxiv,
-  synthesises findings, queues results as fleeting notes for inbox triage
-- **Text-to-speech** -- Multi-provider TTS with automatic fallback (ElevenLabs, AI Gateway
-  unified billing, Workers AI Deepgram Aura 2)
-- **Speech-to-text** -- Audio transcription with fallback to Workers AI Whisper
+- **Autonomous research agent** -- Analyses KB gaps, executes web research via
+  Perplexity (AI Gateway `research_gen` route), synthesises findings, queues
+  results as fleeting notes for inbox triage. Approving an agenda auto-executes.
+- **Media drive** -- Upload images, videos, audio, and files to Cloudflare R2;
+  browse and filter uploads on the `/drive` page with inline previews and playback
+- **Text-to-speech** -- TTS via AI Gateway `audio_gen` dynamic route (unified billing)
+- **Speech-to-text** -- Audio transcription via AI Gateway `stt_gen` dynamic route
 - **KB health dashboard** -- Embedding coverage, orphan detection, cluster analysis,
   AI-powered note splitting and summarisation
 - **Cloudflare Access auth** -- Google OAuth gate managed by Cloudflare Access;
@@ -64,21 +66,20 @@ Browser --> Cloudflare Access (Google OAuth)
         --> Cloudflare Worker (zettl)
                |  Hono router (src/worker/)
                |
-        +------+-------------------------------+
-        |      |                               |
-   D1 (SQLite) Vectorize index         AI Gateway (x)
-   (notes,     (zettel-notes,          +------------------+
-    tags,       1024-dim cosine)       | text_gen    (LLM)|
-    versions)                          | image_gen (image)|
-        |                              | audio_gen  (TTS) |
-   Cloudflare Queues                   | stt_gen    (STT) |
-   +-- zettel-embeddings               +------------------+
-   +-- zettel-enrichment                    |
-                                   Workers AI (fallback)
-                                   +-- @cf/baai/bge-large-en-v1.5 (embeddings)
-                                   +-- @cf/moonshotai/kimi-k2.5 (LLM)
-                                   +-- @cf/deepgram/aura-2-en (TTS)
-                                   +-- @cf/openai/whisper (STT)
+        +------+------+------------------+
+        |      |      |                  |
+   D1 (SQLite) |  R2 (zettel-media)  AI Gateway (x) — unified billing
+   (notes,     |  (uploads: images,  +-------------------------------+
+    tags,       |   video, audio,    | text_gen       (LLM)          |
+    versions)   |   files)           | research_gen   (Perplexity)   |
+        |       |                    | ai_embed       (embeddings)   |
+   Vectorize    |                    | audio_gen      (TTS)          |
+   (zettel-notes,                    | stt_gen        (STT)          |
+    2056-dim cosine)                 | image_gen      (images)       |
+        |                            +-------------------------------+
+   Cloudflare Queues
+   +-- zettel-embeddings
+   +-- zettel-enrichment
 
 Capture:
   Email / Telegram --> zettel-capture-queue worker --> Worker /api/capture/*
@@ -94,50 +95,29 @@ Static assets: React SPA bundled and served via Cloudflare Static Assets binding
 
 ## AI Gateway
 
-All AI requests route through **Cloudflare AI Gateway** (`gateway: x`) for unified
-logging, caching, rate limiting, and cost tracking. The gateway is configured with
-four dynamic routes:
+**All AI requests** route through **Cloudflare AI Gateway** (`gateway: x`) with
+**unified billing** — no direct model calls, no provider API keys in the worker.
+The gateway handles provider selection, logging, caching, rate limiting, and cost tracking.
 
-| Route       | Purpose               | Providers                                    |
-| ----------- | --------------------- | -------------------------------------------- |
-| `text_gen`  | LLM chat completions  | OpenRouter, Google AI Studio, Workers AI     |
-| `image_gen` | Image generation      | (configured in gateway dashboard)            |
-| `audio_gen` | Text-to-speech        | ElevenLabs, Workers AI (Deepgram Aura 2)     |
-| `stt_gen`   | Speech-to-text        | Deepgram, Workers AI (Whisper)               |
+| Route           | Endpoint pattern                | Purpose                                      |
+| --------------- | ------------------------------- | -------------------------------------------- |
+| `text_gen`      | `/compat/chat/completions`      | LLM chat completions                         |
+| `research_gen`  | `/compat/chat/completions`      | Web research (Perplexity sonar-pro)          |
+| `ai_embed`      | `/compat/embeddings`            | Text embeddings (pplx-embed-context-v1-4b, 2056-dim) |
+| `audio_gen`     | `/compat/audio/speech`          | Text-to-speech                               |
+| `stt_gen`       | `/compat/audio/transcriptions`  | Speech-to-text                               |
+| `image_gen`     | (configured in gateway)         | Image generation                             |
 
-### Fallback chain
+### Auth
 
-Every AI request follows a 3-tier fallback:
+Each request sends a single auth header:
 
-1. **Stored API key** -- Uses the provider API key from Secrets Store
-   (e.g., `OPENROUTER_API_KEY`, `ELEVENLABS_API_KEY`)
-2. **Unified billing** -- Routes through AI Gateway with `CF_AIG_TOKEN`;
-   Cloudflare bills directly, no provider key needed
-3. **Workers AI** -- Always available, zero-config fallback
-   (kimi-k2.5 for LLM, Deepgram Aura 2 for TTS, Whisper for STT)
+- **`cf-aig-authorization: Bearer <CF_AIG_TOKEN>`** -- AI Gateway token for
+  unified billing. The gateway selects providers and models based on its
+  dynamic route configuration.
 
-### SDK
-
-LLM requests use the **Vercel AI SDK** (`ai@6`) with `ai-gateway-provider`:
-
-```typescript
-import { createAiGateway } from 'ai-gateway-provider'
-import { createUnified } from 'ai-gateway-provider/providers/unified'
-import { generateText } from 'ai'
-
-const aigateway = createAiGateway({
-  accountId: '85d376fc54617bcb57185547f08e528b',
-  gateway: 'x',
-  apiKey: '{CF_AIG_TOKEN}',
-})
-
-const unified = createUnified({ apiKey: '{PROVIDER_API_KEY}' })
-
-const { text } = await generateText({
-  model: aigateway(unified('openai/gpt-4o')),
-  prompt: 'What is Cloudflare?',
-})
-```
+The app sends `model: "dynamic/<route>"` (e.g., `dynamic/text_gen`) and the
+gateway resolves the actual provider and model.
 
 ---
 
@@ -148,7 +128,7 @@ frontend from Static Assets and exposes the REST API.
 
 ### Prerequisites
 
-- Cloudflare account with Workers, D1, Vectorize, AI Gateway, and Workers AI enabled
+- Cloudflare account with Workers, D1, Vectorize, R2, AI Gateway enabled
 - Node.js 20+ and `npm`
 - Wrangler CLI: `npm install -g wrangler`
 
@@ -158,8 +138,11 @@ frontend from Static Assets and exposes the REST API.
 # D1 database
 npx wrangler d1 create zettel
 
-# Vectorize index (1024 dims for BGE-large-en-v1.5)
-npx wrangler vectorize create zettel-notes --dimensions=1024 --metric=cosine
+# Vectorize index (2056 dims for pplx-embed-context-v1-4b)
+npx wrangler vectorize create zettel-notes --dimensions=2056 --metric=cosine
+
+# R2 bucket (media uploads)
+npx wrangler r2 bucket create zettel-media
 
 # Queues
 npx wrangler queues create zettel-embeddings
@@ -173,12 +156,8 @@ Copy the IDs printed by each command into `src/worker/wrangler.toml`.
 Secrets are stored in a Cloudflare Secrets Store and/or via `wrangler secret put`:
 
 ```bash
-# AI Gateway auth (required for unified billing fallback)
+# AI Gateway auth (required for unified billing)
 npx wrangler secret put CF_AIG_TOKEN
-
-# External provider keys (optional -- falls back to Workers AI if missing)
-npx wrangler secret put OPENROUTER_API_KEY
-npx wrangler secret put ELEVENLABS_API_KEY
 
 # Optional integrations
 npx wrangler secret put BRAVE_API_KEY           # Research agent web search
@@ -229,8 +208,6 @@ cd src/zettel-web-ui && npm run dev
 | Secret / Binding            | Type           | Required | Description                                      |
 | --------------------------- | -------------- | -------- | ------------------------------------------------ |
 | `CF_AIG_TOKEN`              | Wrangler secret | Yes     | Cloudflare AI Gateway token for unified billing  |
-| `OPENROUTER_API_KEY`        | Secrets Store  | No       | OpenRouter API key for LLM                       |
-| `ELEVENLABS_API_KEY`        | Secrets Store  | No       | ElevenLabs API key for TTS                       |
 | `BRAVE_API_KEY`             | Secrets Store  | No       | Brave Search API key for research agent          |
 | `READWISE_ACCESS_TOKEN`     | Secrets Store  | No       | Readwise Reader access token                     |
 | `TELEGRAM_BOT_TOKEN`        | Secrets Store  | No       | Telegram bot token for capture                   |
@@ -351,6 +328,14 @@ See [docs/API_REFERENCE.md](docs/API_REFERENCE.md) for full endpoint documentati
 | `PUT`    | `/api/voice/configs/{id}`  | Update a voice config                |
 | `DELETE` | `/api/voice/configs/{id}`  | Delete a voice config                |
 
+### Media Upload / Drive
+
+| Method | Endpoint                      | Description                                    |
+| ------ | ----------------------------- | ---------------------------------------------- |
+| `POST` | `/api/upload`                 | Upload a file (multipart form, 50 MB max)      |
+| `GET`  | `/api/upload/files`           | List uploaded files (filter: `?type=image`)     |
+| `GET`  | `/media/{key}`                | Serve a file from R2 (immutable cache)         |
+
 ### Other
 
 | Method | Endpoint                | Description          |
@@ -389,15 +374,15 @@ zettl/
         index.ts            # Entry point: fetch + queue + scheduled handlers
         middleware/auth.ts   # Cloudflare Access JWT validation
         routes/              # One file per route group (notes, search, content, ...)
-        services/            # LLM (AI SDK), audio (TTS/STT), embeddings, search
-          llm.ts             # AI Gateway + Vercel AI SDK (generateText/streamText)
-          audio.ts           # TTS/STT with 3-tier fallback
-          embeddings.ts      # BGE embeddings via Workers AI
+        services/            # LLM, audio (TTS/STT), embeddings, search
+          llm.ts             # AI Gateway text_gen / research_gen routes
+          audio.ts           # AI Gateway audio_gen / stt_gen routes
+          embeddings.ts      # AI Gateway ai_embed route (pplx-embed-context-v1-4b)
           search.ts          # Hybrid search (Vectorize + D1 FTS)
         queues/              # Embedding + enrichment queue consumers
         db/                  # Drizzle ORM schema + D1 client
         cron/                # Content generation cron handler
-      wrangler.toml          # Worker config: D1, Vectorize, AI, Queues, Gateway
+      wrangler.toml          # Worker config: D1, Vectorize, R2, Queues
     zettel-web-ui/           # React frontend (Vite + Tailwind + shadcn/ui)
       src/
         api/                 # Typed fetch wrappers for each backend endpoint

@@ -29,6 +29,7 @@ import { useCreateNote, useUpdateNote } from '@/hooks/use-notes'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useAutosave, loadDraft, clearDraft } from '@/hooks/use-autosave'
 import { parseStoredContent, serializeEditorContent } from '@/lib/blocknote'
+import { uploadFile } from '@/api/upload'
 import { toast } from 'sonner'
 import type { Note, NoteType, SourceType } from '@/api/types'
 
@@ -78,7 +79,16 @@ export function NoteEditor({ note }: NoteEditorProps) {
     }
   }, [draft])
 
-  const editor = useCreateBlockNote()
+  const editor = useCreateBlockNote({
+    uploadFile: async (file: File) => {
+      try {
+        return await uploadFile(file)
+      } catch {
+        toast.error('Failed to upload file')
+        throw new Error('Upload failed')
+      }
+    },
+  })
 
   // Load initial HTML content into BlockNote
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router'
-import { Feather } from 'lucide-react'
+import { Feather, MessageCircle, Compass, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,15 +16,21 @@ import {
 } from '@/components/ui/tooltip'
 import { TagInput } from '@/components/tag-input'
 import { useCaptureNote } from '@/hooks/use-inbox'
+import { AiChat } from './ai-chat'
+import { ExploreModal } from './explore-modal'
 import { toast } from 'sonner'
 
 export function CaptureButton() {
   const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [captureOpen, setCaptureOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [exploreOpen, setExploreOpen] = useState(false)
   const [content, setContent] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const capture = useCaptureNote()
+  const fabRef = useRef<HTMLDivElement>(null)
 
   const reset = () => {
     setContent('')
@@ -46,7 +52,7 @@ export function CaptureButton() {
             },
           })
           reset()
-          setOpen(false)
+          setCaptureOpen(false)
         },
         onError: () => {
           toast.error('Failed to capture note')
@@ -69,34 +75,111 @@ export function CaptureButton() {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'N' && e.shiftKey && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setOpen(true)
+        setCaptureOpen(true)
+        setExpanded(false)
       }
     }
     document.addEventListener('keydown', handleGlobalKeyDown)
     return () => document.removeEventListener('keydown', handleGlobalKeyDown)
   }, [])
 
+  // Close expanded menu when clicking outside
+  useEffect(() => {
+    if (!expanded) return
+    const handleClick = (e: MouseEvent) => {
+      if (fabRef.current && !fabRef.current.contains(e.target as Node)) {
+        setExpanded(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [expanded])
+
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            size="icon-lg"
-            className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg"
-            onClick={() => setOpen(true)}
-          >
-            <Feather className="size-5" />
-            <span className="sr-only">Quick capture</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Quick capture ({isMac ? '\u2318' : 'Ctrl'}+Shift+N)</TooltipContent>
-      </Tooltip>
+      {/* FAB cluster */}
+      <div ref={fabRef} className="fixed bottom-6 right-6 z-40 flex flex-col-reverse items-center gap-3">
+        {/* Main toggle button */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon-lg"
+              className="rounded-full shadow-lg transition-transform duration-200"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <X className="size-5" /> : <Plus className="size-5" />}
+              <span className="sr-only">{expanded ? 'Close' : 'Actions'}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">{expanded ? 'Close' : 'Actions'}</TooltipContent>
+        </Tooltip>
 
+        {/* Expanded action buttons */}
+        {expanded && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-lg"
+                  variant="secondary"
+                  className="rounded-full shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-150"
+                  onClick={() => {
+                    setCaptureOpen(true)
+                    setExpanded(false)
+                  }}
+                >
+                  <Feather className="size-5" />
+                  <span className="sr-only">Quick capture</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Quick capture ({isMac ? '\u2318' : 'Ctrl'}+Shift+N)</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-lg"
+                  variant="secondary"
+                  className="rounded-full shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200"
+                  onClick={() => {
+                    setChatOpen(true)
+                    setExpanded(false)
+                  }}
+                >
+                  <MessageCircle className="size-5" />
+                  <span className="sr-only">AI Chat</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">AI Chat</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-lg"
+                  variant="secondary"
+                  className="rounded-full shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  onClick={() => {
+                    setExploreOpen(true)
+                    setExpanded(false)
+                  }}
+                >
+                  <Compass className="size-5" />
+                  <span className="sr-only">Explore</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Explore</TooltipContent>
+            </Tooltip>
+          </>
+        )}
+      </div>
+
+      {/* Quick capture dialog */}
       <Dialog
-        open={open}
+        open={captureOpen}
         onOpenChange={(value) => {
           if (!value) reset()
-          setOpen(value)
+          setCaptureOpen(value)
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -135,6 +218,12 @@ export function CaptureButton() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* AI Chat floating window */}
+      <AiChat open={chatOpen} onOpenChange={setChatOpen} />
+
+      {/* Explore modal */}
+      <ExploreModal open={exploreOpen} onOpenChange={setExploreOpen} />
     </>
   )
 }

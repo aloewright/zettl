@@ -1,42 +1,41 @@
 import type { Env } from '../types'
 
-// ── Workers AI embeddings ────────────────────────────────────────────────────
-// Uses @cf/baai/bge-large-en-v1.5 (1024-dim) via the ai_binding.
-// When CF_AI_GATEWAY_URL is set, routes through AI Gateway for
-// caching, rate-limit visibility, and cost tracking.
+// ── Embeddings via AI Gateway ───────────────────────────────────────────────
+// Routes through AI Gateway "x" dynamic route `ai_embed` with unified billing.
+// Model: pplx-embed-context-v1-4b (2056-dim output via Perplexity)
+// Vectorize index must be created with --dimensions=2056 --metric=cosine.
 
-// Model: @cf/baai/bge-large-en-v1.5 — outputs 1024-dimensional vectors.
-// Vectorize index must be created with --dimensions=1024 --metric=cosine.
+const ACCOUNT_ID = '85d376fc54617bcb57185547f08e528b'
+const GATEWAY_ID = 'x'
+
 export async function generateEmbeddingAI(
   env: Env,
   text: string,
 ): Promise<number[]> {
-  const opts = workersAIGatewayOpts(env)
-  const result = await env.ai_binding.run(
-    '@cf/baai/bge-large-en-v1.5',
-    { text: [text] },
-    opts,
-  ) as { data: number[][] }
-  const embedding = result.data?.[0]
+  const gatewayUrl = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/${GATEWAY_ID}/compat/embeddings`
+  const cfToken = env.CF_AIG_TOKEN
+
+  const res = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cfToken ? { 'cf-aig-authorization': `Bearer ${cfToken}` } : {}),
+    },
+    body: JSON.stringify({
+      model: 'dynamic/ai_embed',
+      input: text,
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`AI Gateway [ai_embed] ${res.status}: ${errText}`)
+  }
+
+  const result = await res.json<{ data?: Array<{ embedding?: number[] }> }>()
+  const embedding = result.data?.[0]?.embedding
   if (!embedding || embedding.length === 0) {
-    throw new Error('Workers AI returned no embedding for the given text')
+    throw new Error('AI Gateway returned no embedding for the given text')
   }
   return embedding
-}
-
-/** Parse the gateway ID from CF_AI_GATEWAY_URL for use with the Workers AI binding. */
-function workersAIGatewayOpts(
-  env: Env,
-): { gateway?: { id: string } } {
-  if (!env.CF_AI_GATEWAY_URL) return {}
-  try {
-    // URL format: https://gateway.ai.cloudflare.com/v1/{accountId}/{gatewayId}
-    const parsed = new URL(env.CF_AI_GATEWAY_URL.trim())
-    const segments = parsed.pathname.replace(/\/$/, '').split('/').filter(Boolean)
-    // Expect: ["v1", accountId, gatewayId]
-    const id = segments.length >= 3 ? segments[2] : undefined
-    return id ? { gateway: { id } } : {}
-  } catch {
-    return {}
-  }
 }

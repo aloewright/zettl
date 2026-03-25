@@ -1,5 +1,6 @@
 import { FileText } from 'lucide-react'
 import { CommandItem } from '@/components/ui/command'
+import { WikiLinkView } from './wiki-link-view'
 import type { SearchResult } from '@/api/types'
 
 interface SearchResultItemProps {
@@ -18,7 +19,10 @@ export function SearchResultItem({ result, onSelect }: SearchResultItemProps) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{result.title}</p>
         {result.snippet && (
-          <p className="truncate text-xs text-muted-foreground">{result.snippet}</p>
+          <WikiLinkView
+            html={result.snippet}
+            className="truncate text-xs text-muted-foreground"
+          />
         )}
       </div>
       {result.rank > 0 && (

@@ -169,6 +169,7 @@ export interface ContentGeneration {
   reviewedAt: string | null
   pieces?: ContentPiece[]
   sourceNotes?: SourceNoteInfo[]
+  llmModel?: string
 }
 
 export interface ContentPiece {

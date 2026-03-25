@@ -64,7 +64,12 @@ router.get('/inbox', async (c) => {
     return acc
   }, {})
 
-  return c.json(rows.map(r => ({ ...r, tags: tagMap[r.id] ?? [] })))
+  // Frontend expects { items, totalCount } with tags as { tag: string }[]
+  const items = rows.map(r => ({
+    ...r,
+    tags: (tagMap[r.id] ?? []).map(t => ({ tag: t })),
+  }))
+  return c.json({ items, totalCount: items.length })
 })
 
 router.get('/inbox/count', async (c) => {
@@ -174,10 +179,22 @@ router.post('/check-duplicate', async (c) => {
 
 router.post('/re-embed', async (c) => {
   const db = c.get('db')
+
+  const staleNotes = await db.select({ id: notes.id })
+    .from(notes)
+    .where(eq(notes.embedStatus, 'Done'))
+
+  if (!staleNotes.length) return c.json({ queued: 0 })
+
   await db.update(notes)
     .set({ embedStatus: 'Stale' })
     .where(eq(notes.embedStatus, 'Done'))
-  return c.json({ queued: true })
+
+  for (const n of staleNotes) {
+    await c.env.EMBED_QUEUE.send({ noteId: n.id })
+  }
+
+  return c.json({ queued: staleNotes.length })
 })
 
 // ── Single note ────────────────────────────────────────────────────────────────

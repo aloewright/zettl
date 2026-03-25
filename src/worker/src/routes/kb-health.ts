@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { eq, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
+import { stripCodeFences } from '../services/llm'
 import { notes, noteTags } from '../db/schema'
 import { chatCompletion } from '../services/llm'
 
@@ -343,7 +344,7 @@ smaller atomic notes. Return a JSON object with key "notes" containing an array 
   })
 
   try {
-    const parsed = JSON.parse(raw || '{}')
+    const parsed = JSON.parse(stripCodeFences(raw || '{}'))
     const suggestedNotes = parsed.notes ?? parsed.suggestions ?? []
     return c.json({
       noteId,

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { eq, desc, and, sql, inArray } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
+import { stripCodeFences } from '../services/llm'
 import {
   contentGenerations,
   contentPieces,
@@ -122,7 +123,7 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
     maxTokens: isBlog ? 2000 : 800,
   })
 
-  const parsed = JSON.parse(raw || '{}')
+  const parsed = JSON.parse(stripCodeFences(raw || '{}'))
   return {
     topicSummary: parsed.topicSummary ?? 'Generated content',
     body: parsed.body ?? '',
@@ -173,7 +174,13 @@ router.post('/generate', async (c) => {
 
   const clusterNotes = await findClusterNotes(c.env.vector_db, db, seedNote)
 
-  const generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  let generated: Awaited<ReturnType<typeof generateContentFromNotes>>
+  try {
+    generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  } catch (err) {
+    console.error('[content] Blog generation failed:', err)
+    return c.json({ error: `Content generation failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   const generationId = makeId()
   await db.insert(contentGenerations).values({
@@ -219,13 +226,13 @@ router.post('/generate', async (c) => {
   await db.insert(usedSeedNotes).values({ noteId: seedNote.id, usedAt: isoNow() })
     .onConflictDoNothing()
 
-  // Return the full generation with pieces
+  // Return the full generation with pieces + model info
   const [gen] = await db.select().from(contentGenerations).where(eq(contentGenerations.id, generationId))
   const pieces = await db.select().from(contentPieces).where(eq(contentPieces.generationId, generationId))
-
   return c.json({
     ...normalizeGeneration(gen as unknown as Record<string, unknown>),
     pieces: pieces.map(p => normalizePiece(p as unknown as Record<string, unknown>)),
+    llmModel: 'ai-gateway/text_gen',
   }, 201)
 })
 
@@ -342,6 +349,7 @@ router.get('/generations/:id', async (c) => {
     ...normalizeGeneration(gen as unknown as Record<string, unknown>),
     pieces: pieces.map(p => normalizePiece(p as unknown as Record<string, unknown>)),
     sourceNotes,
+    llmModel: 'ai-gateway/text_gen',
   })
 })
 

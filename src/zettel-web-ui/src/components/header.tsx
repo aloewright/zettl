@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { Plus, Search, GitBranch, Inbox, Menu, Sparkles, Mic, Activity, Telescope, Settings2 } from 'lucide-react'
+import { Plus, Search, Inbox, Menu, Sparkles, Mic, GitBranch, Activity, Telescope, Settings, HardDrive, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import {
   Tooltip,
   TooltipContent,
@@ -85,73 +84,74 @@ export function Header({ onOpenSearch }: HeaderProps) {
             </TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="h-4" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/drive" className="text-muted-foreground">
+                  <HardDrive className="h-4 w-4" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Drive</TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" asChild>
-                <Link to="/content" className="text-muted-foreground">
+                <Link to="/settings" className="text-muted-foreground">
+                  <Settings className="h-4 w-4" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Settings</TooltipContent>
+          </Tooltip>
+
+          {/* More menu — folded icons */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-muted-foreground">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem asChild>
+                <Link to="/content" className="gap-2">
                   <Sparkles className="h-4 w-4" />
+                  Content review
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Content review</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/voice" className="text-muted-foreground">
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/voice" className="gap-2">
                   <Mic className="h-4 w-4" />
+                  Voice assistant
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Voice assistant</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/voice-config" className="text-muted-foreground">
-                  <Settings2 className="h-3.5 w-3.5" />
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/voice-config" className="gap-2">
+                  <Settings2 className="h-4 w-4" />
+                  Voice style
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Voice style</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/graph" className="text-muted-foreground">
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/graph" className="gap-2">
                   <GitBranch className="h-4 w-4" />
+                  Knowledge graph
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Knowledge graph</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/kb-health" className="text-muted-foreground">
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/kb-health" className="gap-2">
                   <Activity className="h-4 w-4" />
+                  KB health
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>KB health</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/research" className="text-muted-foreground">
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/research" className="gap-2">
                   <Telescope className="h-4 w-4" />
+                  Research inbox
                 </Link>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Research inbox</TooltipContent>
-          </Tooltip>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <ThemeToggle />
         </div>
@@ -201,6 +201,12 @@ export function Header({ onOpenSearch }: HeaderProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
+                <Link to="/drive" className="gap-2" onClick={() => setMenuOpen(false)}>
+                  <HardDrive className="h-4 w-4" />
+                  Drive
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
                 <Link to="/content" className="gap-2" onClick={() => setMenuOpen(false)}>
                   <Sparkles className="h-4 w-4" />
                   Content review
@@ -238,6 +244,7 @@ export function Header({ onOpenSearch }: HeaderProps) {
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/settings" className="gap-2" onClick={() => setMenuOpen(false)}>
+                  <Settings className="h-4 w-4" />
                   Settings
                 </Link>
               </DropdownMenuItem>

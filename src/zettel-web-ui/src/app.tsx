@@ -45,6 +45,9 @@ const KbHealthPage = lazy(() =>
 const ResearchPage = lazy(() =>
   lazyWithReload(() => import('./pages/research')).then((m) => ({ default: m.ResearchPage })),
 )
+const DrivePage = lazy(() =>
+  lazyWithReload(() => import('./pages/drive')).then((m) => ({ default: m.DrivePage })),
+)
 
 // Clear stale-asset reload guard on successful load
 sessionStorage.removeItem('chunk-reload')
@@ -146,6 +149,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<LazyFallback />}>
             <ResearchPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: '/drive',
+        element: (
+          <Suspense fallback={<LazyFallback />}>
+            <DrivePage />
           </Suspense>
         ),
       },

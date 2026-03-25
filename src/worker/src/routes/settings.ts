@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { appSettings } from '../db/schema'
-import type { LLMProvider } from '../services/llm'
+type LLMProvider = 'openrouter' | 'google'
 
 const router = new Hono<HonoEnv>()
 

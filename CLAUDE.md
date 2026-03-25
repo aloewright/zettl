@@ -6,39 +6,53 @@ Project-level instructions that override or extend global defaults.
 
 ## Stack
 
-- **Backend**: ASP.NET Core 10, EF Core, PostgreSQL + pgvector
-- **Frontend**: React, TypeScript, Vite, TanStack Query, Tailwind, shadcn/ui
-- **Tests**: xUnit + Testcontainers (real PostgreSQL, fake LLM/embedding clients)
+- **Backend**: Cloudflare Workers (Hono), D1 (SQLite), Vectorize, R2, Queues
+- **Frontend**: React, TypeScript, Vite, TanStack Query, Tailwind v4, shadcn/ui, BlockNote
+- **AI**: All AI calls route through **Cloudflare AI Gateway "x"** with unified billing — no direct model calls
 - **Docs**: `docs/` — see `docs/compound/index.md` for searchable learnings
+
+---
+
+## AI Gateway — CRITICAL
+
+**Every AI call MUST go through AI Gateway.** Never call models directly (no `ai_binding.run()`, no direct ElevenLabs/OpenRouter/etc API calls).
+
+- **Gateway ID**: `x`
+- **Account ID**: `85d376fc54617bcb57185547f08e528b`
+- **Auth**: `cf-aig-authorization: Bearer <CF_AIG_TOKEN>` header (unified billing)
+- **Base URL**: `https://gateway.ai.cloudflare.com/v1/{ACCOUNT_ID}/{GATEWAY_ID}`
+
+### Dynamic Routes
+
+| Route | Endpoint pattern | Purpose |
+|---|---|---|
+| `text_gen` | `/compat/chat/completions` with `model: "dynamic/text_gen"` | LLM chat/content generation |
+| `research_gen` | `/compat/chat/completions` with `model: "dynamic/research_gen"` | Perplexity research |
+| `audio_gen` | `/compat/audio/speech` with `model: "dynamic/audio_gen"` | Text-to-speech |
+| `stt_gen` | `/compat/audio/transcriptions` | Speech-to-text |
+| `ai_embed` | `/compat/embeddings` with `model: "dynamic/ai_embed"` | Text embeddings (2056-dim, pplx-embed-context-v1-4b) |
+
+### Key files
+
+- `src/worker/src/services/llm.ts` — `gatewayChat()` for text_gen / research_gen
+- `src/worker/src/services/embeddings.ts` — `generateEmbeddingAI()` for ai_embed
+- `src/worker/src/services/audio.ts` — `textToSpeech()` / `speechToText()` for audio_gen / stt_gen
 
 ---
 
 ## Full-Stack Feature Completion Checklist
 
 **Every new API endpoint must include all three layers in the same commit.**
-Backend-only PRs are incomplete. See `docs/compound/patterns/PAT-002-full-stack-feature-completion.md`.
 
 When adding any controller action:
 
 - [ ] Backend endpoint implemented and tests passing
 - [ ] API client function added to `src/zettel-web-ui/src/api/*.ts`
-  - [ ] HTTP verb matches the controller attribute exactly (`[HttpPost]` → `post()`, `[HttpPut]` → `put()`, etc.)
-  - [ ] URL path matches the controller route exactly
+  - [ ] HTTP verb matches the route method exactly
+  - [ ] URL path matches the route exactly
 - [ ] UI wired up: button/trigger, loading state, success toast, error toast
 - [ ] React Query cache invalidated correctly (right query key)
 - [ ] `docs/API_REFERENCE.md` updated
-
-### HTTP Verb Reference
-
-| Controller attribute | Client helper |
-|---|---|
-| `[HttpGet]` | `get<T>(url)` |
-| `[HttpPost]` | `post<T>(url, body?)` |
-| `[HttpPut]` | `put<T>(url, body)` |
-| `[HttpDelete]` | `del(url)` |
-
-Never assume — read the attribute first. A wrong verb produces a silent `405` at runtime
-that no test will catch. See `docs/compound/frontend/FE-002-api-client-http-method-mismatch.md`.
 
 ---
 
