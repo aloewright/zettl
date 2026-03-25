@@ -8,6 +8,7 @@ export interface Env {
   CF_AI_GATEWAY_URL?: string  // plain env var (informational)
   CF_ACCESS_TEAM?: string     // Cloudflare Access team domain
   CF_AIG_TOKEN?: string       // AI Gateway auth token (wrangler secret, fallback for fetch)
+  ENABLE_DIAG?: string        // Set to "true" to enable /api/diag/* endpoints
   // AI binding — pre-authenticated, no cf-aig-authorization header needed
   AI: Ai
   // Durable Object binding for ChatAgent

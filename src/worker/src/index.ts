@@ -105,7 +105,12 @@ app.get('/api/discover', async (c) => {
 app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() }))
 
 // ── AI Diagnostics (GET /api/diag/ai) ───────────────────────────────────────
+// Gated behind ENABLE_DIAG=true env var to prevent billable calls in production.
 app.get('/api/diag/ai', async (c) => {
+  if (c.env.ENABLE_DIAG !== 'true') {
+    return c.json({ error: 'Diagnostics disabled' }, 403)
+  }
+
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
   // Test A: dynamic/text_gen via compat endpoint
@@ -116,12 +121,12 @@ app.get('/api/diag/ai', async (c) => {
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
     const raw = await res.text()
     if (!res.ok) {
-      results.A_dynamic = { ok: false, status: res.status, error: raw.slice(0, 500) }
+      results.A_dynamic = { ok: false, status: res.status }
     } else {
       const data = JSON.parse(raw)
       results.A_dynamic = { ok: true, content: data?.choices?.[0]?.message?.content }
     }
-  } catch (err) { results.A_dynamic = { ok: false, error: String(err) } }
+  } catch { results.A_dynamic = { ok: false } }
 
   // Test B: workers-ai/ via compat endpoint
   try {
@@ -131,12 +136,12 @@ app.get('/api/diag/ai', async (c) => {
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
     const raw = await res.text()
     if (!res.ok) {
-      results.B_workersai = { ok: false, status: res.status, error: raw.slice(0, 500) }
+      results.B_workersai = { ok: false, status: res.status }
     } else {
       const data = JSON.parse(raw)
       results.B_workersai = { ok: true, content: data?.choices?.[0]?.message?.content }
     }
-  } catch (err) { results.B_workersai = { ok: false, error: String(err) } }
+  } catch { results.B_workersai = { ok: false } }
 
   // Test C: embedding via env.AI.run() with gateway
   try {
@@ -147,7 +152,7 @@ app.get('/api/diag/ai', async (c) => {
     ) as { data?: number[][] }
     const dims = embedResult?.data?.[0]?.length ?? 0
     results.C_embed = { ok: dims > 0, dims }
-  } catch (err) { results.C_embed = { ok: false, error: String(err) } }
+  } catch { results.C_embed = { ok: false } }
 
   // Debug: show if CF_AIG_TOKEN is set
   results.hasToken = !!c.env.CF_AIG_TOKEN
