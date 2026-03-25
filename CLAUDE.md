@@ -24,8 +24,7 @@ Project-level instructions that override or extend global defaults.
 
 ### Dynamic Routes
 
-Dynamic routes use the `/dynamic/{routeName}/...` URL pattern (NOT the compat endpoint).
-The `gatewayFetch()` helper automatically routes `model: "dynamic/..."` to the correct URL.
+Dynamic routes use the `/compat/...` endpoint with `model: "dynamic/{routeName}"` in the request body.
 
 | Route | Endpoint pattern | Purpose |
 |---|---|---|

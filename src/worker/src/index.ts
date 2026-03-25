@@ -111,7 +111,7 @@ app.get('/api/diag/ai', async (c) => {
       c.env,
       '/chat/completions',
       {
-        model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        model: 'dynamic/text_gen',
         messages: [{ role: 'user', content: 'Say ok' }],
         max_tokens: 5,
       },
