@@ -62,6 +62,8 @@ export async function gatewayFetch(
 
 /**
  * POST to compat endpoint, return parsed JSON.
+ * Reads the full body as text first — dynamic routes may use chunked
+ * transfer encoding that res.json() doesn't handle in all Workers runtimes.
  */
 export async function gatewayJSON<T = unknown>(
   env: Env,
@@ -69,5 +71,13 @@ export async function gatewayJSON<T = unknown>(
   body: unknown,
 ): Promise<T> {
   const res = await gatewayFetch(env, path, body)
-  return res.json() as Promise<T>
+  const text = await res.text()
+  if (!text) {
+    throw new Error(`AI Gateway ${path}: empty response body (status ${res.status})`)
+  }
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`AI Gateway ${path}: invalid JSON: ${text.slice(0, 300)}`)
+  }
 }
