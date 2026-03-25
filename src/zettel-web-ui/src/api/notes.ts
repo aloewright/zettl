@@ -5,7 +5,7 @@ export function listNotes(skip = 0, take = 50, tag?: string, noteType?: NoteType
   const page = Math.floor(skip / take) + 1
   const params = new URLSearchParams({ page: String(page), pageSize: String(take) })
   if (tag) params.set('tag', tag)
-  if (noteType) params.set('noteType', noteType)
+  if (noteType) params.set('noteType', noteType.toLowerCase())
   return get<PagedResponse<Note>>(`/api/notes?${params}`)
 }
 
