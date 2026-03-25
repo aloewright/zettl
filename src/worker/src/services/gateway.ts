@@ -1,15 +1,11 @@
 /**
  * Centralized AI Gateway configuration.
  *
- * ALL AI calls go through AI Gateway "x" for logging/analytics.
- * Uses the provider-specific Workers AI endpoint (not compat/dynamic
- * which currently returns empty bodies).
+ * ALL AI calls go through AI Gateway "x" via the compat endpoint.
+ * Uses workers-ai/ prefix for models (no API keys needed).
  *
- * Gateway URL pattern:
- *   {GATEWAY_BASE}/workers-ai/v1/chat/completions
- *   {GATEWAY_BASE}/workers-ai/v1/embeddings
- *
- * For research (Perplexity), uses the perplexity-ai provider endpoint.
+ * When dynamic route API keys are fixed in the dashboard,
+ * switch model names back to dynamic/text_gen, dynamic/ai_embed, etc.
  */
 
 import type { Env } from '../types'
@@ -20,7 +16,6 @@ export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/
 
 /**
  * Build gateway auth headers.
- * cf-aig-authorization: Bearer <CF_AIG_TOKEN> for authentication.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
@@ -35,16 +30,15 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * Fetch-based gateway call through Workers AI provider endpoint.
+ * POST to the compat endpoint and return the raw Response.
  */
 export async function gatewayFetch(
   env: Env,
-  provider: string,
   path: string,
   body: unknown,
   extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  const url = `${GATEWAY_BASE}/${provider}${path}`
+  const url = `${GATEWAY_BASE}/compat${path}`
   const headers = gatewayHeaders(env, extraHeaders)
 
   const res = await fetch(url, {
@@ -55,21 +49,20 @@ export async function gatewayFetch(
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`AI Gateway [${provider}] ${path} ${res.status}: ${errText}`)
+    throw new Error(`AI Gateway ${path} ${res.status}: ${errText}`)
   }
 
   return res
 }
 
 /**
- * Gateway call returning parsed JSON via Workers AI provider.
+ * POST to compat endpoint, return parsed JSON.
  */
 export async function gatewayJSON<T = unknown>(
   env: Env,
-  provider: string,
   path: string,
   body: unknown,
 ): Promise<T> {
-  const res = await gatewayFetch(env, provider, path, body)
+  const res = await gatewayFetch(env, path, body)
   return res.json() as Promise<T>
 }

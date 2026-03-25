@@ -102,38 +102,69 @@ app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() })
 
 // ── AI Diagnostics (GET /api/diag/ai) ───────────────────────────────────────
 app.get('/api/diag/ai', async (c) => {
+  const GW = 'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x'
+  const token = c.env.CF_AIG_TOKEN ?? ''
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
-  // Chat via gateway Workers AI provider
-  try {
-    const res = await fetch(
-      'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x/workers-ai/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(c.env.CF_AIG_TOKEN ? { 'cf-aig-authorization': `Bearer ${c.env.CF_AIG_TOKEN}` } : {}),
-        },
-        body: JSON.stringify({
-          model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-          messages: [{ role: 'user', content: 'Say ok' }],
-          max_tokens: 5,
-        }),
-      },
-    )
-    const body = await res.text()
-    results.chat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 200) }
-  } catch (err) {
-    results.chat = { error: String(err) }
+  // Helper: read response body by consuming the stream manually
+  async function readBody(res: Response): Promise<string> {
+    if (!res.body) return '(no body)'
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let result = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      result += decoder.decode(value, { stream: true })
+    }
+    result += decoder.decode()
+    return result
   }
 
-  // Embed via Workers AI direct binding
+  // Test A: compat with dynamic/text_gen
   try {
-    const r = await c.env.AI.run('@cf/baai/bge-large-en-v1.5', { text: ['test'] }) as { data?: number[][] }
-    results.embed = { ok: true, dims: r?.data?.[0]?.length ?? 0 }
-  } catch (err) {
-    results.embed = { error: String(err) }
-  }
+    const res = await fetch(`${GW}/compat/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
+      body: JSON.stringify({ model: 'dynamic/text_gen', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
+    })
+    const body = await readBody(res)
+    results.A_dynamic = { status: res.status, bodyLen: body.length, model: res.headers.get('cf-aig-model'), provider: res.headers.get('cf-aig-provider'), preview: body.slice(0, 300) }
+  } catch (err) { results.A_dynamic = { error: String(err) } }
+
+  // Test B: compat with explicit workers-ai model
+  try {
+    const res = await fetch(`${GW}/compat/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
+      body: JSON.stringify({ model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
+    })
+    const body = await readBody(res)
+    results.B_workersai_compat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 300) }
+  } catch (err) { results.B_workersai_compat = { error: String(err) } }
+
+  // Test C: compat with explicit cerebras model (what dynamic resolves to)
+  try {
+    const res = await fetch(`${GW}/compat/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
+      body: JSON.stringify({ model: 'cerebras/zai-glm-4.7', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }),
+    })
+    const body = await readBody(res)
+    results.C_cerebras_compat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 300) }
+  } catch (err) { results.C_cerebras_compat = { error: String(err) } }
+
+  // Test D: compat embed with dynamic/ai_embed
+  try {
+    const res = await fetch(`${GW}/compat/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-aig-authorization': `Bearer ${token}` },
+      body: JSON.stringify({ model: 'dynamic/ai_embed', input: 'test' }),
+    })
+    const body = await readBody(res)
+    let dims = 0; try { dims = JSON.parse(body)?.data?.[0]?.embedding?.length ?? 0 } catch {}
+    results.D_embed_dynamic = { status: res.status, bodyLen: body.length, dims, preview: body.slice(0, 300) }
+  } catch (err) { results.D_embed_dynamic = { error: String(err) } }
 
   return c.json(results)
 })

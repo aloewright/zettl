@@ -2,15 +2,17 @@ import type { Env } from '../types'
 import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
-// All LLM calls route through the gateway's Workers AI provider endpoint.
-// This ensures gateway logging/analytics while using reliable Workers AI models.
+// Using workers-ai/ prefix via compat endpoint (no API keys needed).
+// Once dynamic route API keys are fixed in dashboard, change to:
+//   CHAT_MODEL = 'dynamic/text_gen'
+//   RESEARCH_MODEL = 'dynamic/research_gen'
 
-const CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-const RESEARCH_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const RESEARCH_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Strip markdown code fences (```json ... ```) that LLMs sometimes wrap around JSON. */
+/** Strip markdown code fences that LLMs sometimes wrap around JSON. */
 export function stripCodeFences(text: string): string {
   const trimmed = text.trim()
   const match = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/)
@@ -52,8 +54,7 @@ export async function chatCompletion(
 
   const result = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
     env,
-    'workers-ai',
-    '/v1/chat/completions',
+    '/chat/completions',
     {
       model: CHAT_MODEL,
       messages,
@@ -77,7 +78,7 @@ export async function chatCompletionStream(
 ): Promise<ReadableStream> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
 
-  const res = await gatewayFetch(env, 'workers-ai', '/v1/chat/completions', {
+  const res = await gatewayFetch(env, '/chat/completions', {
     model: CHAT_MODEL,
     messages,
     max_tokens: opts.maxTokens ?? 2000,
@@ -89,8 +90,7 @@ export async function chatCompletionStream(
 }
 
 // ── Research completion ──────────────────────────────────────────────────────
-// Uses the same Workers AI model for research (Perplexity compat endpoint
-// returns empty bodies currently). Falls back to LLM-based research.
+// Once dynamic routes are fixed, change to: model: 'dynamic/research_gen'
 
 export async function researchCompletion(
   env: Env,
@@ -101,7 +101,7 @@ export async function researchCompletion(
   const result = await gatewayJSON<{
     choices?: Array<{ message?: { content?: string } }>
     citations?: string[]
-  }>(env, 'workers-ai', '/v1/chat/completions', {
+  }>(env, '/chat/completions', {
     model: RESEARCH_MODEL,
     messages,
     max_tokens: opts.maxTokens ?? 1500,
