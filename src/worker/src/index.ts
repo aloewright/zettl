@@ -24,7 +24,7 @@ import authRouter from './routes/auth'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
-import { gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
+import { gatewayJSON, AI_GATEWAY_OPTS, GATEWAY_BASE } from './services/gateway'
 
 const app = new Hono<HonoEnv>()
 

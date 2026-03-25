@@ -4,7 +4,8 @@
  * ALL AI calls go through AI Gateway "x" with unified billing.
  * No provider API keys needed — Cloudflare bills the account directly.
  *
- * Chat/LLM: fetch() → compat endpoint with workers-ai/ prefix
+ * Dynamic routes: fetch() → /dynamic/{routeName}/... endpoint
+ * Compat routes:  fetch() → /compat/... endpoint with provider/model in body
  * Embeddings/Audio: env.AI.run() with { gateway: { id: GATEWAY_ID } }
  *
  * Both approaches route through AI Gateway and use unified billing.
@@ -35,40 +36,56 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * POST to the compat endpoint and return the raw Response.
+ * Build the gateway URL for a given model and path.
+ * - Dynamic routes (model starts with "dynamic/"): /dynamic/{routeName}{path}
+ * - Compat routes (provider/model format):         /compat{path}
+ */
+function buildGatewayUrl(model: string, path: string): string {
+  if (model.startsWith('dynamic/')) {
+    const routeName = model.slice('dynamic/'.length)
+    return `${GATEWAY_BASE}/dynamic/${routeName}${path}`
+  }
+  return `${GATEWAY_BASE}/compat${path}`
+}
+
+/**
+ * POST to the gateway and return the raw Response.
+ * Automatically routes dynamic/ models to /dynamic/{route}/ endpoint
+ * and other models to /compat/ endpoint.
  */
 export async function gatewayFetch(
   env: Env,
   path: string,
-  body: unknown,
+  body: Record<string, unknown>,
   extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  const url = `${GATEWAY_BASE}/compat${path}`
+  const model = (body.model as string) ?? ''
+  const url = buildGatewayUrl(model, path)
   const headers = gatewayHeaders(env, extraHeaders)
 
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`AI Gateway ${path} ${res.status}: ${errText}`)
+    throw new Error(`AI Gateway ${url} ${res.status}: ${errText}`)
   }
 
   return res
 }
 
 /**
- * POST to compat endpoint, return parsed JSON.
+ * POST to gateway, return parsed JSON.
  * Reads the full body as text first — dynamic routes may use chunked
  * transfer encoding that res.json() doesn't handle in all Workers runtimes.
  */
 export async function gatewayJSON<T = unknown>(
   env: Env,
   path: string,
-  body: unknown,
+  body: Record<string, unknown>,
 ): Promise<T> {
   const res = await gatewayFetch(env, path, body)
   const text = await res.text()

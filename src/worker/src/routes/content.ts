@@ -574,6 +574,19 @@ router.get('/pieces', async (c) => {
   })
 })
 
+// GET /api/content/pieces/scheduled — must be before /pieces/:id to avoid matching "scheduled" as :id
+router.get('/pieces/scheduled', async (c) => {
+  const db = c.get('db')
+  const rows = await db.select().from(contentPieces)
+    .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
+    .orderBy(contentPieces.scheduledAt)
+
+  return c.json(rows.map(r => ({
+    ...r,
+    generatedTags: parseTags(r.generatedTags),
+  })))
+})
+
 router.get('/pieces/:id', async (c) => {
   const db = c.get('db')
   const [piece] = await db.select().from(contentPieces)
@@ -640,19 +653,6 @@ router.put('/pieces/:id/schedule', async (c) => {
 
   const [updated] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
   return c.json(updated)
-})
-
-// GET /api/content/pieces/scheduled — get all scheduled pieces
-router.get('/pieces/scheduled', async (c) => {
-  const db = c.get('db')
-  const rows = await db.select().from(contentPieces)
-    .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
-    .orderBy(contentPieces.scheduledAt)
-
-  return c.json(rows.map(r => ({
-    ...r,
-    generatedTags: parseTags(r.generatedTags),
-  })))
 })
 
 // GET /api/content/pieces/:id/export — markdown export

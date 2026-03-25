@@ -1,5 +1,5 @@
 import type { Env } from '../types'
-import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, gatewayFetch } from './gateway'
+import { gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
 // All AI calls route through AI Gateway dynamic routes with unified billing.
@@ -87,7 +87,6 @@ export async function chatCompletionStream(
 }
 
 // ── Research completion ──────────────────────────────────────────────────────
-// Once dynamic routes are fixed, change to: model: 'dynamic/research_gen'
 
 export async function researchCompletion(
   env: Env,

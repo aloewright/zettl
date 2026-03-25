@@ -3,12 +3,12 @@ import { eq } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { appSettings } from '../db/schema'
 import type { createDb } from '../db/client'
-import { GATEWAY_BASE, gatewayHeaders, AI_GATEWAY_OPTS } from '../services/gateway'
+import { gatewayFetch, AI_GATEWAY_OPTS } from '../services/gateway'
 import { listMcpTools, callMcpTool, type McpTool } from '../services/mcp'
 
 const router = new Hono<HonoEnv>()
 
-const COMPAT_MODEL = 'dynamic/text_gen'
+const CHAT_MODEL = 'dynamic/text_gen'
 // For env.AI.run() tool calling, we need the actual Workers AI model name
 const NATIVE_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
@@ -70,34 +70,27 @@ router.post('/stream', async (c) => {
     }
   }
 
-  const headers = gatewayHeaders(c.env)
-
-  // If no tools, just stream directly via compat endpoint
+  // If no tools, just stream directly
   if (!mcpTools.length) {
-    const res = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: COMPAT_MODEL,
+    try {
+      const res = await gatewayFetch(c.env, '/chat/completions', {
+        model: CHAT_MODEL,
         messages: body.messages,
         max_tokens: body.maxTokens ?? 2000,
         temperature: body.temperature ?? 0.7,
         stream: true,
-      }),
-    })
+      })
 
-    if (!res.ok) {
-      const errText = await res.text()
-      return c.json({ error: `AI ${res.status}: ${errText}` }, 502)
+      return new Response(res.body, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      })
+    } catch (err) {
+      return c.json({ error: `AI: ${err instanceof Error ? err.message : String(err)}` }, 502)
     }
-
-    return new Response(res.body, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
-    })
   }
 
   // With tools: use env.AI.run() for the first call (native tool calling support)
@@ -210,19 +203,15 @@ router.post('/stream', async (c) => {
         },
       ]
 
-      const contRes = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
-        method: 'POST',
-        headers: gatewayHeaders(c.env),
-        body: JSON.stringify({
-          model: COMPAT_MODEL,
-          messages: continuationMessages,
-          max_tokens: body.maxTokens ?? 2000,
-          temperature: body.temperature ?? 0.7,
-          stream: true,
-        }),
+      const contRes = await gatewayFetch(c.env, '/chat/completions', {
+        model: CHAT_MODEL,
+        messages: continuationMessages,
+        max_tokens: body.maxTokens ?? 2000,
+        temperature: body.temperature ?? 0.7,
+        stream: true,
       })
 
-      if (contRes.ok && contRes.body) {
+      if (contRes.body) {
         const reader = contRes.body.getReader()
         while (true) {
           const { done, value } = await reader.read()
