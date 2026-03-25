@@ -105,13 +105,13 @@ app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() })
 app.get('/api/diag/ai', async (c) => {
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
-  // Test A: chat via compat endpoint (workers-ai/ prefix)
+  // Test A: chat via compat endpoint (dynamic/text_gen)
   try {
     const chatRes = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
       c.env,
       '/chat/completions',
       {
-        model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        model: 'dynamic/text_gen',
         messages: [{ role: 'user', content: 'Say ok' }],
         max_tokens: 5,
       },

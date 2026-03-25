@@ -8,8 +8,9 @@ import { listMcpTools, callMcpTool, type McpTool } from '../services/mcp'
 
 const router = new Hono<HonoEnv>()
 
-const CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-const COMPAT_MODEL = `workers-ai/${CHAT_MODEL}`
+const COMPAT_MODEL = 'dynamic/text_gen'
+// For env.AI.run() tool calling, we need the actual Workers AI model name
+const NATIVE_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 // Composio meta-tools that should NOT be exposed to the LLM
 const META_TOOLS = new Set([
@@ -107,7 +108,7 @@ router.post('/stream', async (c) => {
   let firstResult: { response?: string; tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }> }
   try {
     firstResult = await c.env.AI.run(
-      CHAT_MODEL,
+      NATIVE_MODEL,
       {
         messages: body.messages,
         max_tokens: body.maxTokens ?? 2000,
