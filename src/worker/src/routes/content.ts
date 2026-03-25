@@ -74,6 +74,20 @@ async function findClusterNotes(
   }
 }
 
+/**
+ * Generate AI-written content (topic summary, body, description, and tags) from a seed note and related cluster notes for the specified medium.
+ *
+ * Uses voice configuration and examples for the medium when available to influence tone and audience.
+ *
+ * @param medium - Target medium for the generated content (e.g., "blog" for long-form blog posts; other values produce social-style output)
+ * @param seedNote - Primary source note to base the generation on
+ * @param clusterNotes - Additional related notes to include as context
+ * @returns An object containing:
+ *  - `topicSummary`: a one-sentence summary of the topic,
+ *  - `body`: the generated content in markdown (full blog post for blog medium, thread/post for social),
+ *  - `description`: a short excerpt (two sentences for blog, one sentence for social),
+ *  - `tags`: an array of 3–5 tag strings (for social these are hashtag strings without `#`)
+ */
 async function generateContentFromNotes(
   env: HonoEnv['Bindings'],
   db: ReturnType<typeof import('../db/client').createDb>,

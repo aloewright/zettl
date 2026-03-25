@@ -67,7 +67,12 @@ export async function chatCompletion(
   return text
 }
 
-// ── Chat completion (SSE streaming) ──────────────────────────────────────────
+/**
+ * Creates a streaming chat completion request and returns the response stream.
+ *
+ * @param opts - Options containing `messages` and optional `maxTokens` and `temperature` that control the completion request
+ * @returns The ReadableStream for the model's streaming response body
+ */
 
 export async function chatCompletionStream(
   env: Env,
@@ -86,7 +91,13 @@ export async function chatCompletionStream(
   return res.body!
 }
 
-// ── Research completion ──────────────────────────────────────────────────────
+/**
+ * Request a research-oriented chat completion and return the response text together with any citations.
+ *
+ * @param env - Environment bindings used to call the gateway
+ * @param opts - Completion options; `opts.messages` is the conversation, `opts.maxTokens` overrides the token limit, and `opts.temperature` controls randomness
+ * @returns An object with `text` containing the model's reply (empty string if none) and `citations` containing any returned citation identifiers (empty array if none)
+ */
 
 export async function researchCompletion(
   env: Env,

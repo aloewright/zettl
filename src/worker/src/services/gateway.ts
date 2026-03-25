@@ -21,7 +21,10 @@ export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/
 export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
 
 /**
- * Build gateway auth headers for fetch-based calls.
+ * Construct headers for requests sent through the Cloudflare AI Gateway.
+ *
+ * @param extra - Additional headers to merge into the resulting header map; values in `extra` override defaults.
+ * @returns A map of headers containing `Content-Type: application/json` and, when `env.CF_AIG_TOKEN` is present, `cf-aig-authorization: Bearer <token>`.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
@@ -36,9 +39,15 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * Build the gateway URL for a given model and path.
- * - Dynamic routes (model starts with "dynamic/"): /dynamic/{routeName}{path}
- * - Compat routes (provider/model format):         /compat{path}
+ * Determine the full gateway endpoint URL for a given model and request path.
+ *
+ * Dynamic models whose identifier starts with `"dynamic/"` are routed to
+ * `/dynamic/{routeName}{path}` (where `routeName` is the substring after the prefix).
+ * All other models are routed to `/compat{path}`.
+ *
+ * @param model - Model identifier; use the prefix `dynamic/` to target a dynamic route, otherwise a compat route is used
+ * @param path - Request path to append to the selected gateway route (should begin with `/` when needed)
+ * @returns The complete gateway URL including the base, selected route segment, and the provided path
  */
 function buildGatewayUrl(model: string, path: string): string {
   if (model.startsWith('dynamic/')) {
@@ -49,9 +58,17 @@ function buildGatewayUrl(model: string, path: string): string {
 }
 
 /**
- * POST to the gateway and return the raw Response.
- * Automatically routes dynamic/ models to /dynamic/{route}/ endpoint
- * and other models to /compat/ endpoint.
+ * Send a POST request to the Cloudflare AI Gateway and return the raw Response.
+ *
+ * The request is routed based on `body.model`: models starting with `dynamic/` are sent to
+ * `/dynamic/{routeName}{path}`, all other models are sent to `/compat{path}`.
+ *
+ * @param env - Worker environment bindings used to build headers and gateway URL
+ * @param path - Path suffix to append to the selected gateway endpoint
+ * @param body - JSON-serializable request body; if `body.model` is a string it controls routing
+ * @param extraHeaders - Additional headers to merge with the default gateway headers
+ * @returns The fetch `Response` returned by the gateway
+ * @throws Error if the gateway responds with a non-OK status; the error message includes the full URL, HTTP status, and response text
  */
 export async function gatewayFetch(
   env: Env,
@@ -78,9 +95,12 @@ export async function gatewayFetch(
 }
 
 /**
- * POST to gateway, return parsed JSON.
- * Reads the full body as text first — dynamic routes may use chunked
- * transfer encoding that res.json() doesn't handle in all Workers runtimes.
+ * Send a POST to the AI gateway and parse the full response body as JSON.
+ *
+ * @param path - Gateway path suffix (appended to the computed gateway base URL)
+ * @param body - Request payload; if `body.model` is a string starting with `"dynamic/"` the request is routed to the dynamic route for that model, otherwise it is routed to the compat endpoint
+ * @returns The parsed JSON response as type `T`
+ * @throws Error if the response body is empty or if the response is not valid JSON
  */
 export async function gatewayJSON<T = unknown>(
   env: Env,
