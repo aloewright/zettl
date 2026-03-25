@@ -221,7 +221,7 @@ router.post('/stream', async (c) => {
       }
     } catch (err) {
       console.error('[generate] Tool execution error:', err)
-      const errChunk = { choices: [{ index: 0, delta: { content: `\n\nError: ${err instanceof Error ? err.message : 'Unknown error'}` } }] }
+      const errChunk = { choices: [{ index: 0, delta: { content: '\n\nError: Tool execution failed' } }] }
       await writer.write(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`))
       await writer.write(encoder.encode('data: [DONE]\n\n'))
     } finally {
