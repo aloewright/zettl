@@ -1,5 +1,5 @@
 import type { Env } from '../types'
-import { GATEWAY_BASE, gatewayHeaders } from './gateway'
+import { getGatewayUrl, gatewayHeaders } from './gateway'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,8 @@ async function gatewayChat(
   messages: Array<{ role: string; content: string }>,
   opts: { maxTokens: number; temperature: number; stream?: boolean },
 ): Promise<Response> {
-  const res = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
+  const baseUrl = await getGatewayUrl(env)
+  const res = await fetch(`${baseUrl}/compat/chat/completions`, {
     method: 'POST',
     headers: gatewayHeaders(env),
     body: JSON.stringify({

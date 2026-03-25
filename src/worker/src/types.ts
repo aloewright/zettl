@@ -5,9 +5,11 @@ export interface Env {
   d1_db: D1Database
   // Cloudflare Vectorize index binding
   vector_db: VectorizeIndex
-  CF_AI_GATEWAY_URL?: string // plain env var (not sensitive)
-  CF_ACCESS_TEAM?: string // Cloudflare Access team domain (optional override)
-  CF_AIG_TOKEN?: string       // AI Gateway auth token — wrangler secret (plain string at runtime)
+  CF_AI_GATEWAY_URL?: string  // plain env var (informational)
+  CF_ACCESS_TEAM?: string     // Cloudflare Access team domain
+  CF_AIG_TOKEN?: string       // AI Gateway auth token (wrangler secret, fallback for fetch)
+  // AI binding — pre-authenticated, no cf-aig-authorization header needed
+  AI: Ai
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding

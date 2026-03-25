@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { appSettings } from '../db/schema'
 import type { createDb } from '../db/client'
-import { GATEWAY_BASE, gatewayHeaders } from '../services/gateway'
+import { getGatewayUrl, gatewayHeaders } from '../services/gateway'
 import { listMcpTools, callMcpTool, mcpToolsToOpenAI } from '../services/mcp'
 
 const router = new Hono<HonoEnv>()
@@ -43,6 +43,7 @@ router.post('/stream', async (c) => {
     }
   }
 
+  const gatewayUrl = await getGatewayUrl(c.env)
   const headers = gatewayHeaders(c.env)
 
   // First request: stream with tools
@@ -57,7 +58,7 @@ router.post('/stream', async (c) => {
     firstBody.tools = openaiTools
   }
 
-  const firstRes = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
+  const firstRes = await fetch(`${gatewayUrl}/compat/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(firstBody),
@@ -171,7 +172,7 @@ router.post('/stream', async (c) => {
                 ...toolResults,
               ]
 
-              const contRes = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
+              const contRes = await fetch(`${gatewayUrl}/compat/chat/completions`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
