@@ -13,7 +13,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ThemeToggle } from './theme-toggle'
 import { useInboxCount } from '@/hooks/use-inbox'
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -32,7 +31,7 @@ export function Header({ onOpenSearch }: HeaderProps) {
     <header className="border-b border-border/50">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3 sm:py-4">
         <Link to="/" className="font-serif text-xl font-semibold tracking-tight">
-          Alex
+          Post
         </Link>
 
         {/* Desktop navigation */}
@@ -153,7 +152,6 @@ export function Header({ onOpenSearch }: HeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <ThemeToggle />
         </div>
 
         {/* Mobile navigation */}
@@ -251,7 +249,6 @@ export function Header({ onOpenSearch }: HeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <ThemeToggle />
         </div>
       </div>
     </header>
