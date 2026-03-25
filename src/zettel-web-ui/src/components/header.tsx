@@ -97,6 +97,17 @@ export function Header({ onOpenSearch }: HeaderProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" asChild>
+                <Link to="/research" className="text-muted-foreground">
+                  <Telescope className="h-4 w-4" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Research inbox</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" asChild>
                 <Link to="/settings" className="text-muted-foreground">
                   <Settings className="h-4 w-4" />
                 </Link>
@@ -141,12 +152,6 @@ export function Header({ onOpenSearch }: HeaderProps) {
                 <Link to="/kb-health" className="gap-2">
                   <Activity className="h-4 w-4" />
                   KB health
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/research" className="gap-2">
-                  <Telescope className="h-4 w-4" />
-                  Research inbox
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
