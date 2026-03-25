@@ -1,5 +1,4 @@
 import type { Env } from '../types'
-import { gatewayFetch } from './gateway'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,37 +20,27 @@ export interface TranscriptionResult {
   segments?: { start: number; end: number; text: string }[]
 }
 
-// ── Text-to-Speech (uses fetch — needs raw audio response) ──────────────────
+// ── Text-to-Speech via Workers AI ────────────────────────────────────────────
 
 export async function textToSpeech(
   env: Env,
   opts: TTSOptions,
 ): Promise<ArrayBuffer> {
-  const res = await gatewayFetch(env, '/compat/audio/speech', {
-    method: 'POST',
-    body: JSON.stringify({
-      model: 'dynamic/audio_gen',
-      input: opts.text,
-      voice: opts.voice ?? 'alloy',
-      speed: opts.speed ?? 1.0,
-    }),
+  // Use Workers AI directly for TTS — reliable, pre-authenticated
+  const result = await env.AI.run('@cf/myshell/melotts-v2' as any, {
+    prompt: opts.text,
   })
-
-  return res.arrayBuffer()
+  return result as unknown as ArrayBuffer
 }
 
-// ── Speech-to-Text (uses fetch — sends raw audio binary) ────────────────────
+// ── Speech-to-Text via Workers AI ────────────────────────────────────────────
 
 export async function speechToText(
   env: Env,
   opts: STTOptions,
 ): Promise<TranscriptionResult> {
-  const res = await gatewayFetch(env, '/compat/audio/transcriptions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: opts.audio,
-  })
-
-  const data = await res.json() as { text?: string; segments?: TranscriptionResult['segments'] }
-  return { text: data.text ?? '', segments: data.segments }
+  const result = await env.AI.run('@cf/openai/whisper' as any, {
+    audio: [...new Uint8Array(opts.audio)],
+  }) as { text?: string }
+  return { text: result?.text ?? '' }
 }

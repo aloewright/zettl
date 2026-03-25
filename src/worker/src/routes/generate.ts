@@ -47,7 +47,7 @@ router.post('/stream', async (c) => {
 
   // First request: stream with tools
   const firstBody: Record<string, unknown> = {
-    model: 'dynamic/text_gen',
+    model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
     messages: body.messages,
     max_tokens: body.maxTokens ?? 2000,
     temperature: body.temperature ?? 0.7,
@@ -57,7 +57,7 @@ router.post('/stream', async (c) => {
     firstBody.tools = openaiTools
   }
 
-  const firstRes = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
+  const firstRes = await fetch(`${GATEWAY_BASE}/workers-ai/v1/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(firstBody),
@@ -171,11 +171,11 @@ router.post('/stream', async (c) => {
                 ...toolResults,
               ]
 
-              const contRes = await fetch(`${GATEWAY_BASE}/compat/chat/completions`, {
+              const contRes = await fetch(`${GATEWAY_BASE}/workers-ai/v1/chat/completions`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({
-                  model: 'dynamic/text_gen',
+                  model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
                   messages: continuationMessages,
                   max_tokens: body.maxTokens ?? 2000,
                   temperature: body.temperature ?? 0.7,

@@ -100,6 +100,44 @@ app.get('/api/discover', async (c) => {
 
 app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() }))
 
+// ── AI Diagnostics (GET /api/diag/ai) ───────────────────────────────────────
+app.get('/api/diag/ai', async (c) => {
+  const results: Record<string, unknown> = { ts: new Date().toISOString() }
+
+  // Chat via gateway Workers AI provider
+  try {
+    const res = await fetch(
+      'https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x/workers-ai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(c.env.CF_AIG_TOKEN ? { 'cf-aig-authorization': `Bearer ${c.env.CF_AIG_TOKEN}` } : {}),
+        },
+        body: JSON.stringify({
+          model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+          messages: [{ role: 'user', content: 'Say ok' }],
+          max_tokens: 5,
+        }),
+      },
+    )
+    const body = await res.text()
+    results.chat = { status: res.status, bodyLen: body.length, preview: body.slice(0, 200) }
+  } catch (err) {
+    results.chat = { error: String(err) }
+  }
+
+  // Embed via Workers AI direct binding
+  try {
+    const r = await c.env.AI.run('@cf/baai/bge-large-en-v1.5', { text: ['test'] }) as { data?: number[][] }
+    results.embed = { ok: true, dims: r?.data?.[0]?.length ?? 0 }
+  } catch (err) {
+    results.embed = { error: String(err) }
+  }
+
+  return c.json(results)
+})
+
 // ── SPA fallback ────────────────────────────────────────────────────────────
 // Any non-API route that wasn't matched by static assets → serve index.html
 

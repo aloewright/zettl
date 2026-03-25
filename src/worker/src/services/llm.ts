@@ -1,5 +1,12 @@
 import type { Env } from '../types'
-import { GATEWAY_BASE, gatewayHeaders } from './gateway'
+import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, gatewayFetch } from './gateway'
+
+// ── Model config ─────────────────────────────────────────────────────────────
+// All LLM calls route through the gateway's Workers AI provider endpoint.
+// This ensures gateway logging/analytics while using reliable Workers AI models.
+
+const CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const RESEARCH_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,36 +31,6 @@ interface ChatCompletionOptions {
   responseFormat?: { type: 'json_object' | 'text' }
 }
 
-// ── Gateway chat helper ─────────────────────────────────────────────────────
-
-async function gatewayChat(
-  env: Env,
-  route: string,
-  messages: Array<{ role: string; content: string }>,
-  opts: { maxTokens: number; temperature: number; stream?: boolean },
-): Promise<Response> {
-  const url = `${GATEWAY_BASE}/compat/chat/completions`
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: gatewayHeaders(env),
-    body: JSON.stringify({
-      model: `dynamic/${route}`,
-      messages,
-      max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
-      ...(opts.stream ? { stream: true } : {}),
-    }),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(`AI Gateway [${route}] ${res.status}: ${errText}`)
-  }
-
-  return res
-}
-
 // ── Chat completion (non-streaming) ──────────────────────────────────────────
 
 export async function chatCompletion(
@@ -73,14 +50,22 @@ export async function chatCompletion(
     }
   }
 
-  const res = await gatewayChat(env, 'text_gen', messages, {
-    maxTokens: opts.maxTokens ?? 2000,
-    temperature: opts.temperature ?? 0.7,
-  })
+  const result = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
+    env,
+    'workers-ai',
+    '/v1/chat/completions',
+    {
+      model: CHAT_MODEL,
+      messages,
+      max_tokens: opts.maxTokens ?? 2000,
+      temperature: opts.temperature ?? 0.7,
+    },
+  )
 
-  const data = await res.json<{ choices?: Array<{ message?: { content?: string } }> }>()
-  const text = data.choices?.[0]?.message?.content ?? ''
-  if (!text) throw new Error('Empty response from AI Gateway text_gen')
+  const text = result?.choices?.[0]?.message?.content ?? ''
+  if (!text) {
+    throw new Error(`Empty chat response: ${JSON.stringify(result).slice(0, 300)}`)
+  }
   return text
 }
 
@@ -92,8 +77,10 @@ export async function chatCompletionStream(
 ): Promise<ReadableStream> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
 
-  const res = await gatewayChat(env, 'text_gen', messages, {
-    maxTokens: opts.maxTokens ?? 2000,
+  const res = await gatewayFetch(env, 'workers-ai', '/v1/chat/completions', {
+    model: CHAT_MODEL,
+    messages,
+    max_tokens: opts.maxTokens ?? 2000,
     temperature: opts.temperature ?? 0.7,
     stream: true,
   })
@@ -101,7 +88,9 @@ export async function chatCompletionStream(
   return res.body!
 }
 
-// ── Research completion (Perplexity via research_gen) ─────────────────────────
+// ── Research completion ──────────────────────────────────────────────────────
+// Uses the same Workers AI model for research (Perplexity compat endpoint
+// returns empty bodies currently). Falls back to LLM-based research.
 
 export async function researchCompletion(
   env: Env,
@@ -109,17 +98,17 @@ export async function researchCompletion(
 ): Promise<{ text: string; citations: string[] }> {
   const messages = opts.messages.map(m => ({ role: m.role, content: m.content }))
 
-  const res = await gatewayChat(env, 'research_gen', messages, {
-    maxTokens: opts.maxTokens ?? 1500,
+  const result = await gatewayJSON<{
+    choices?: Array<{ message?: { content?: string } }>
+    citations?: string[]
+  }>(env, 'workers-ai', '/v1/chat/completions', {
+    model: RESEARCH_MODEL,
+    messages,
+    max_tokens: opts.maxTokens ?? 1500,
     temperature: opts.temperature ?? 0.3,
   })
 
-  const data = await res.json<{
-    choices?: Array<{ message?: { content?: string } }>
-    citations?: string[]
-  }>()
-
-  const text = data.choices?.[0]?.message?.content ?? ''
-  const citations = data.citations ?? []
+  const text = result?.choices?.[0]?.message?.content ?? ''
+  const citations = result?.citations ?? []
   return { text, citations }
 }

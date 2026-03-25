@@ -48,8 +48,7 @@ export async function handleEmbedMessage(
       embedStatus: 'Done',
       embedError: null,
       embedUpdatedAt: isoNow(),
-      // Model behind ai_embed gateway route; dims truncated to 1536 for Vectorize
-      embeddingModel: 'ai-gateway/ai_embed',
+      embeddingModel: '@cf/baai/bge-large-en-v1.5',
       embedRetryCount: 0,
     }).where(eq(notes.id, noteId))
 
