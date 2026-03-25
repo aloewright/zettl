@@ -121,9 +121,21 @@ router.post('/stream', async (c) => {
     return c.json({ error: `AI tool call failed: ${err instanceof Error ? err.message : String(err)}` }, 502)
   }
 
-  console.log(`[generate] AI response: tool_calls=${firstResult.tool_calls?.length ?? 0}, hasText=${!!firstResult.response}`)
+  console.log(`[generate] AI response: tool_calls=${firstResult.tool_calls?.length ?? 0}, hasText=${!!firstResult.response}, response=${(firstResult.response ?? '').slice(0, 200)}`)
 
-  const toolCalls = firstResult.tool_calls
+  // Workers AI may return tool calls in the structured field OR as JSON text in response
+  let toolCalls = firstResult.tool_calls
+  if (!toolCalls?.length && firstResult.response) {
+    try {
+      const parsed = JSON.parse(firstResult.response)
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].name) {
+        toolCalls = parsed as typeof toolCalls
+        console.log(`[generate] Parsed ${toolCalls!.length} tool calls from text response`)
+      }
+    } catch {
+      // Not JSON tool calls, just a text response
+    }
+  }
 
   // No tool calls — stream the text content as SSE
   if (!toolCalls?.length) {

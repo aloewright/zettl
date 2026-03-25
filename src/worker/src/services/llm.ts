@@ -2,13 +2,11 @@ import type { Env } from '../types'
 import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
-// Using workers-ai/ prefix via compat endpoint (no API keys needed).
-// Once dynamic route API keys are fixed in dashboard, change to:
-//   CHAT_MODEL = 'dynamic/text_gen'
-//   RESEARCH_MODEL = 'dynamic/research_gen'
+// Chat uses workers-ai/ prefix (confirmed working via compat endpoint).
+// Research uses dynamic/research_gen route (Perplexity sonar-pro via gateway).
 
 const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-const RESEARCH_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const RESEARCH_MODEL = 'dynamic/research_gen'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

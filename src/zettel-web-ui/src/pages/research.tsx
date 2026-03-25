@@ -59,7 +59,7 @@ function FindingCard({ finding }: { finding: ResearchFinding }) {
         </Badge>
       </div>
 
-      <p className="text-sm text-muted-foreground">{finding.synthesis}</p>
+      <div className="whitespace-pre-wrap text-sm text-muted-foreground">{finding.synthesis}</div>
 
       <div className="mt-3 flex justify-end gap-2">
         <Button
