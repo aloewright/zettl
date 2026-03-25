@@ -2,8 +2,20 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useAgent } from 'agents/react'
 import { useAgentChat } from '@cloudflare/ai-chat/react'
 import type { UIMessage } from 'ai'
-import { Send, Mic, MicOff, Paperclip, X, Bot, User, Plug, Square, Loader2 } from 'lucide-react'
+import { Bot, X, Plug, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  Conversation,
+  ConversationEmptyState,
+  MessageItem,
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputTools,
+  PromptInputSubmit,
+  PromptInputAttach,
+  PromptInputVoice,
+  PromptInputAttachment,
+} from '@/components/ai-elements'
 import { useComposioConfig } from '@/hooks/use-composio'
 import { toast } from 'sonner'
 
@@ -12,20 +24,11 @@ interface AiChatProps {
   onOpenChange: (open: boolean) => void
 }
 
-function getMessageText(message: UIMessage): string {
-  return message.parts
-    .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
-    .map(part => part.text)
-    .join('')
-}
-
 export function AiChat({ open, onOpenChange }: AiChatProps) {
   const [input, setInput] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{ name: string; dataUrl: string } | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
@@ -64,14 +67,6 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
 
   const isStreaming = status === 'streaming'
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, scrollToBottom])
-
   useEffect(() => {
     if (open) inputRef.current?.focus()
   }, [open])
@@ -94,10 +89,7 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
     }
   }
 
-  const handleFileAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  const handleFileAttach = (file: File) => {
     if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
       toast.error('Only images and PDFs are supported')
       return
@@ -108,7 +100,6 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
       setAttachedFile({ name: file.name, dataUrl: reader.result as string })
     }
     reader.readAsDataURL(file)
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const toggleRecording = async () => {
@@ -180,138 +171,49 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3" style={{ maxHeight: '400px', minHeight: '200px' }}>
-        {messages.length === 0 && (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Ask anything about your knowledge base, brainstorm ideas, or get help thinking through concepts.
-          </p>
-        )}
-        {messages.map((msg: UIMessage, index: number) => {
-          const text = getMessageText(msg)
-          const isUser = msg.role === 'user'
-          const isLastAssistant = msg.role === 'assistant' && index === messages.length - 1
-          return (
-            <div key={msg.id} className={`mb-3 flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
-              {!isUser && (
-                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Bot className="h-3.5 w-3.5" />
-                </div>
-              )}
-              <div
-                className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                  isUser
-                    ? 'bg-foreground text-background'
-                    : 'bg-muted text-foreground'
-                }`}
-              >
-                {/* Render tool invocations */}
-                {msg.parts
-                  .filter(p => p.type === 'tool-invocation')
-                  .map((part, i) => (
-                    <div key={i} className="mb-1 rounded bg-background/50 px-2 py-1 text-xs text-muted-foreground">
-                      {'toolInvocation' in part && (
-                        <span>Tool: {(part as unknown as { toolInvocation: { toolName: string } }).toolInvocation.toolName}</span>
-                      )}
-                    </div>
-                  ))}
-                <p className="whitespace-pre-wrap">
-                  {text || (isStreaming && isLastAssistant ? '...' : '')}
-                  {isLastAssistant && isStreaming && text && (
-                    <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-foreground align-text-bottom" />
-                  )}
-                </p>
-              </div>
-              {isUser && (
-                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground">
-                  <User className="h-3.5 w-3.5 text-background" />
-                </div>
-              )}
-            </div>
-          )
-        })}
-        <div ref={messagesEndRef} />
-      </div>
+      <Conversation>
+        {messages.length === 0 && <ConversationEmptyState />}
+        {messages.map((msg: UIMessage, index: number) => (
+          <MessageItem
+            key={msg.id}
+            message={msg}
+            isStreaming={isStreaming}
+            isLast={index === messages.length - 1}
+          />
+        ))}
+      </Conversation>
 
       {/* Attached file indicator */}
       {attachedFile && (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs">
-          <Paperclip className="h-3 w-3 shrink-0" />
-          <span className="truncate">{attachedFile.name}</span>
-          <button onClick={() => setAttachedFile(null)} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
-            <X className="h-3 w-3" />
-          </button>
-        </div>
+        <PromptInputAttachment
+          name={attachedFile.name}
+          onRemove={() => setAttachedFile(null)}
+        />
       )}
 
       {/* Input area */}
-      <div className="border-t border-border p-3">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            send()
-          }}
-          className="flex items-end gap-2"
-        >
-          <div className="flex gap-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={handleFileAttach}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 text-muted-foreground"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach image or PDF"
-            >
-              <Paperclip className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={`h-8 w-8 p-0 ${isRecording ? 'text-red-500' : 'text-muted-foreground'}`}
-              onClick={toggleRecording}
-              title={isRecording ? 'Stop recording' : 'Voice input'}
-            >
-              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
-            {composioConfig?.enabled && (
-              <span className="flex h-8 w-8 items-center justify-center text-green-500" title="MCP tools active">
-                <Plug className="h-4 w-4" />
-              </span>
-            )}
-          </div>
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
-            rows={1}
-            className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            style={{ maxHeight: '100px' }}
-          />
-          {isStreaming ? (
-            <Button type="button" size="sm" className="h-8 w-8 p-0" variant="destructive" onClick={stop}>
-              <Square className="h-3.5 w-3.5" />
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              size="sm"
-              className="h-8 w-8 p-0"
-              disabled={!input.trim() && !attachedFile}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+      <PromptInput onSubmit={send}>
+        <PromptInputTools>
+          <PromptInputAttach onAttach={handleFileAttach} />
+          <PromptInputVoice isRecording={isRecording} onToggle={toggleRecording} />
+          {composioConfig?.enabled && (
+            <span className="flex h-8 w-8 items-center justify-center text-green-500" title="MCP tools active">
+              <Plug className="h-4 w-4" />
+            </span>
           )}
-        </form>
-      </div>
+        </PromptInputTools>
+        <PromptInputTextarea
+          ref={inputRef}
+          value={input}
+          onChange={setInput}
+          onKeyDown={handleKeyDown}
+        />
+        <PromptInputSubmit
+          status={isStreaming ? 'streaming' : 'ready'}
+          disabled={!input.trim() && !attachedFile}
+          onStop={stop}
+        />
+      </PromptInput>
     </div>
   )
 }
