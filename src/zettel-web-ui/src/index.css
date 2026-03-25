@@ -132,6 +132,15 @@
   }
 }
 
+/* BlockNote editor — inherit app background instead of BlockNote's grey */
+.bn-container,
+.bn-editor,
+[data-theming-css-variables-demo] {
+  --bn-colors-editor-background: transparent !important;
+  --bn-colors-menu-background: var(--card) !important;
+  background: transparent !important;
+}
+
 /* Read-only note content rendered via WikiLinkView */
 .note-content h1,
 .note-content h2,

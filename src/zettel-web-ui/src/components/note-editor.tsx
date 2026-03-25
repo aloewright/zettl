@@ -28,6 +28,7 @@ import { TagInput } from './tag-input'
 import { useCreateNote, useUpdateNote } from '@/hooks/use-notes'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
 import { useAutosave, loadDraft, clearDraft } from '@/hooks/use-autosave'
+import { useTheme } from '@/hooks/use-theme'
 import { parseStoredContent, serializeEditorContent } from '@/lib/blocknote'
 import { uploadFile } from '@/api/upload'
 import { toast } from 'sonner'
@@ -50,6 +51,7 @@ interface NoteEditorProps {
 
 export function NoteEditor({ note }: NoteEditorProps) {
   const navigate = useNavigate()
+  const { resolvedTheme } = useTheme()
   const createNote = useCreateNote()
   const updateNote = useUpdateNote()
   const savedRef = useRef(false)
@@ -367,7 +369,7 @@ export function NoteEditor({ note }: NoteEditorProps) {
 
       <BlockNoteView
         editor={editor}
-        theme="dark"
+        theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
       />
 
       <AlertDialog open={blocker.state === 'blocked'}>
