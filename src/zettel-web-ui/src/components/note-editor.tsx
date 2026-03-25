@@ -3,6 +3,12 @@ import { useNavigate, useBlocker } from 'react-router'
 import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
 import '@blocknote/shadcn/style.css'
+import {
+  AIExtension,
+  AIMenuController,
+} from '@blocknote/xl-ai'
+import '@blocknote/xl-ai/style.css'
+import { DefaultChatTransport } from 'ai'
 import { ArrowLeft, Save, ChevronDown } from 'lucide-react'
 import { Link as RouterLink } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -31,6 +37,7 @@ import { useAutosave, loadDraft, clearDraft } from '@/hooks/use-autosave'
 import { useTheme } from '@/hooks/use-theme'
 import { parseStoredContent, serializeEditorContent } from '@/lib/blocknote'
 import { uploadFile } from '@/api/upload'
+import { useVisualViewport } from '@/hooks/use-visual-viewport'
 import { toast } from 'sonner'
 import type { Note, NoteType, SourceType } from '@/api/types'
 
@@ -90,6 +97,11 @@ export function NoteEditor({ note }: NoteEditorProps) {
         throw new Error('Upload failed')
       }
     },
+    extensions: [
+      AIExtension({
+        transport: new DefaultChatTransport({ api: '/api/ai/chat' }),
+      }),
+    ],
   })
 
   // Load initial HTML content into BlockNote
@@ -241,12 +253,13 @@ export function NoteEditor({ note }: NoteEditorProps) {
   }, [editor, title, tags, noteType, sourceAuthor, sourceTitle, sourceUrl, sourceYear, sourceType, note, createNote, updateNote, navigate])
 
   const isSaving = createNote.isPending || updateNote.isPending
+  const { keyboardOpen, height: viewportHeight } = useVisualViewport()
 
   const shortcutHandlers = useMemo(() => ({ onSave: handleSave }), [handleSave])
   useKeyboardShortcuts(shortcutHandlers)
 
   return (
-    <div>
+    <div style={keyboardOpen ? { maxHeight: `${viewportHeight}px`, overflow: 'auto' } : undefined}>
       <div className="mb-6 flex items-center justify-between">
         <Button variant="ghost" size="sm" asChild>
           <RouterLink
@@ -370,7 +383,9 @@ export function NoteEditor({ note }: NoteEditorProps) {
       <BlockNoteView
         editor={editor}
         theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
-      />
+      >
+        <AIMenuController />
+      </BlockNoteView>
 
       <AlertDialog open={blocker.state === 'blocked'}>
         <AlertDialogContent>

@@ -22,6 +22,7 @@ import uploadRouter from './routes/upload'
 import composioRouter from './routes/composio'
 import substackRouter from './routes/substack'
 import authRouter from './routes/auth'
+import aiChatRouter from './routes/ai-chat'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
@@ -73,6 +74,7 @@ app.route('/api/generate', generateRouter)
 app.route('/api/upload', uploadRouter)
 app.route('/api/composio', composioRouter)
 app.route('/api/substack', substackRouter)
+app.route('/api/ai/chat', aiChatRouter)
 
 // ── Media serving (R2) ───────────────────────────────────────────────────────
 
