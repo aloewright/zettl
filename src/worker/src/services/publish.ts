@@ -218,7 +218,7 @@ async function publishToResend(req: PublishRequest): Promise<PublishResult> {
       from: req.emailFrom ?? 'blog@thinkingfeeling.com',
       to: req.emailTo,
       subject: req.emailSubject ?? req.title,
-      html: `<h1>${escapeHtml(req.title)}</h1>${escapeHtml(req.body).replace(/\n/g, '<br/>')}`,
+      html: `<h1>${escapeHtml(req.title)}</h1>${emailBodyHtml}`,
     }) as { successful?: boolean; data?: { id?: string } }
 
     const isSuccessful = result?.successful === true
