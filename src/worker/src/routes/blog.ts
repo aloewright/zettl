@@ -125,7 +125,7 @@ export default router
 
 /**
  * Check if the incoming request is for a configured blog domain.
- * Returns the domain string if it's a blog domain, null otherwise.
+ * Returns true if the hostname is a configured blog domain, false otherwise.
  */
 export async function isBlogDomain(hostname: string, db: ReturnType<typeof import('../db/client').createDb>): Promise<boolean> {
   // Check AppSettings for configured blog domains

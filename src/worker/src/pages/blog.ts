@@ -107,6 +107,13 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
+/** Strips unsafe URL schemes (javascript:, data:, vbscript:) from href/src values. */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^(?:javascript|data|vbscript):/i.test(trimmed)) return '#'
+  return trimmed
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -159,7 +166,7 @@ export function markdownToHtml(md: string): string {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       continue
     }
-    const isBlock = /^<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)/.test(trimmed)
+    const isBlock = /^(?:<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)|\x02CB)/.test(trimmed)
     if (isBlock) {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       result.push(trimmed)
@@ -169,7 +176,13 @@ export function markdownToHtml(md: string): string {
     }
   }
   if (inParagraph) result.push('</p>')
-  return result.join('\n')
+  html = result.join('\n')
+
+  // Step 4: Restore extracted code blocks.
+  const placeholderRe = new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g')
+  html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
+
+  return html
 }
 
 function layout(domain: string, title: string, content: string, meta?: { description?: string; ogImage?: string; url?: string }) {

@@ -154,8 +154,8 @@ CREATE TABLE IF NOT EXISTS "BlogPosts" (
   "Tags"        TEXT NOT NULL DEFAULT '[]',
   "Domain"      TEXT NOT NULL,
   "Status"      TEXT NOT NULL DEFAULT 'published',
-  "PublishedAt"  TEXT NOT NULL DEFAULT (datetime('now')),
-  "UpdatedAt"    TEXT NOT NULL DEFAULT (datetime('now')),
+  "PublishedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  "UpdatedAt"    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   "OgImage"     TEXT
 );
 
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS "PublishLog" (
   "ExternalId"   TEXT,
   "Metadata"     TEXT,
   "ErrorMessage" TEXT,
-  "PublishedAt"  TEXT NOT NULL DEFAULT (datetime('now'))
+  "PublishedAt"  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_publishlog_pieceid ON "PublishLog"("PieceId");
