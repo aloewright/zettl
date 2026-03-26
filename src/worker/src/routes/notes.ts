@@ -361,7 +361,10 @@ router.post('/:id/promote', async (c) => {
 
   await db.update(notes).set({ status: 'Permanent', updatedAt: isoNow() }).where(eq(notes.id, id))
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
-  const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
+  const tags = await db
+    .select({ noteId: noteTags.noteId, tag: noteTags.tag })
+    .from(noteTags)
+    .where(eq(noteTags.noteId, id))
   return c.json({ ...updated, tags })
 })
 
