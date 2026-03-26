@@ -54,7 +54,7 @@ router.get('/', async (c) => {
   }, {})
 
   return c.json({
-    items: rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ tag })) })),
+    items: rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ noteId: r.id, tag })) })),
     totalCount: countRows[0]?.count ?? 0,
   })
 })
@@ -75,10 +75,10 @@ router.get('/inbox', async (c) => {
     return acc
   }, {})
 
-  // Frontend expects { items, totalCount } with tags as { tag: string }[]
+  // Frontend expects { items, totalCount } with tags as { noteId: string; tag: string }[]
   const items = rows.map(r => ({
     ...r,
-    tags: (tagMap[r.id] ?? []).map(t => ({ tag: t })),
+    tags: (tagMap[r.id] ?? []).map(t => ({ noteId: r.id, tag: t })),
   }))
   return c.json({ items, totalCount: items.length })
 })
@@ -137,7 +137,7 @@ router.get('/discover', async (c) => {
     return acc
   }, {})
 
-  return c.json(rows.map(r => ({ ...r, tags: tagMap[r.id] ?? [] })))
+  return c.json(rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ noteId: r.id, tag })) })))
 })
 
 router.get('/search-titles', async (c) => {
@@ -217,7 +217,7 @@ router.get('/:id', async (c) => {
   const [note] = await db.select().from(notes).where(eq(notes.id, id))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
-  const tags = await db.select({ tag: noteTags.tag })
+  const tags = await db.select({ noteId: noteTags.noteId, tag: noteTags.tag })
     .from(noteTags).where(eq(noteTags.noteId, id))
 
   return c.json({ ...note, tags })
