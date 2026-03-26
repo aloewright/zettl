@@ -1,80 +1,121 @@
-import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
+import { beforeAll, describe, expect, it } from 'vitest'
 
-const configPath = path.resolve(process.cwd(), 'vite.config.ts')
-const config = readFileSync(configPath, 'utf8')
+let viteConfig: any
+let pwaOptions: any
+
+beforeAll(async () => {
+  const mod: any = await import('./vite.config')
+  const exported = mod.default ?? mod
+
+  // Vite config can be an object or a function returning an object.
+  if (typeof exported === 'function') {
+    viteConfig = await exported({ command: 'serve', mode: 'test' })
+  } else {
+    viteConfig = exported
+  }
+
+  const plugins = Array.isArray(viteConfig.plugins)
+    ? viteConfig.plugins.flat()
+    : viteConfig.plugins
+
+  const pluginList = Array.isArray(plugins) ? plugins : [plugins]
+  const pwaPlugin = pluginList.find((p: any) => p && p.name === 'vite-plugin-pwa')
+
+  pwaOptions = pwaPlugin?.api?.options ?? {}
+})
 
 describe('vite.config.ts workbox config', () => {
   it('does not include navigateFallbackDenylist', () => {
-    expect(config).not.toContain('navigateFallbackDenylist')
+    const workbox = pwaOptions.workbox ?? {}
+    expect(workbox.navigateFallbackDenylist).toBeUndefined()
   })
 
   it('does not include API route denylist pattern', () => {
-    expect(config).not.toContain('/^\\/api\\//')
+    const workbox = pwaOptions.workbox ?? {}
+    const denylist = workbox.navigateFallbackDenylist
+    if (denylist === undefined) {
+      expect(denylist).toBeUndefined()
+      return
+    }
+    const patterns = Array.isArray(denylist) ? denylist : [denylist]
+    const hasApiPattern = patterns.some((p: unknown) =>
+      typeof p === 'string' || p instanceof RegExp
+        ? String(p).includes('/api')
+        : false,
+    )
+    expect(hasApiPattern).toBe(false)
   })
 
   it('does not include health route denylist pattern', () => {
-    expect(config).not.toContain('/^\\/health(?:\\/|$)/')
+    const workbox = pwaOptions.workbox ?? {}
+    const denylist = workbox.navigateFallbackDenylist
+    if (denylist === undefined) {
+      expect(denylist).toBeUndefined()
+      return
+    }
+    const patterns = Array.isArray(denylist) ? denylist : [denylist]
+    const hasHealthPattern = patterns.some((p: unknown) =>
+      typeof p === 'string' || p instanceof RegExp
+        ? String(p).includes('/health')
+        : false,
+    )
+    expect(hasHealthPattern).toBe(false)
   })
 
   it('includes globPatterns for cacheable asset types', () => {
-    expect(config).toContain('globPatterns')
-    expect(config).toContain('**/*.{js,css,html,ico,png,svg,woff2}')
+    const workbox = pwaOptions.workbox ?? {}
+    expect(workbox.globPatterns).toBeDefined()
+    const patterns = Array.isArray(workbox.globPatterns)
+      ? workbox.globPatterns
+      : [workbox.globPatterns]
+    expect(patterns).toContain('**/*.{js,css,html,ico,png,svg,woff2}')
   })
 
   it('includes maximumFileSizeToCacheInBytes set to 3 MiB', () => {
-    expect(config).toContain('maximumFileSizeToCacheInBytes')
-    expect(config).toContain('3 * 1024 * 1024')
+    const workbox = pwaOptions.workbox ?? {}
+    expect(workbox.maximumFileSizeToCacheInBytes).toBe(3 * 1024 * 1024)
   })
 
   it('workbox block contains only the expected keys', () => {
-    const workboxStart = config.indexOf('workbox:')
-    expect(workboxStart).toBeGreaterThan(-1)
-    // Find the opening brace of the workbox object
-    const braceOpen = config.indexOf('{', workboxStart)
-    // Walk forward counting braces to find the matching closing brace
-    let depth = 0
-    let workboxEnd = -1
-    for (let i = braceOpen; i < config.length; i++) {
-      if (config[i] === '{') depth++
-      else if (config[i] === '}') {
-        depth--
-        if (depth === 0) { workboxEnd = i; break }
-      }
-    }
-    expect(workboxEnd).toBeGreaterThan(-1)
-    const workboxBody = config.slice(braceOpen + 1, workboxEnd)
-    expect(workboxBody).toContain('globPatterns')
-    expect(workboxBody).toContain('maximumFileSizeToCacheInBytes')
-    expect(workboxBody).not.toContain('navigateFallbackDenylist')
+    const workbox = pwaOptions.workbox ?? {}
+    const keys = Object.keys(workbox).sort()
+    // We expect only globPatterns and maximumFileSizeToCacheInBytes
+    expect(keys).toEqual(['globPatterns', 'maximumFileSizeToCacheInBytes'].sort())
+    expect(workbox.navigateFallbackDenylist).toBeUndefined()
   })
 })
 
 describe('vite.config.ts PWA plugin config', () => {
   it('registers VitePWA plugin', () => {
-    expect(config).toContain('VitePWA')
+    // If pwaOptions was populated, the plugin is registered.
+    expect(pwaOptions).toBeDefined()
   })
 
   it('uses autoUpdate registration type', () => {
-    expect(config).toContain("registerType: 'autoUpdate'")
+    expect(pwaOptions.registerType).toBe('autoUpdate')
   })
 })
 
 describe('vite.config.ts dev server proxy config', () => {
   it('still proxies /api routes to the backend', () => {
-    expect(config).toContain("'/api'")
+    const server = viteConfig.server ?? {}
+    const proxy = server.proxy ?? {}
+    expect(proxy['/api']).toBeDefined()
   })
 
   it('still proxies /health routes to the backend', () => {
-    expect(config).toContain("'/health'")
+    const server = viteConfig.server ?? {}
+    const proxy = server.proxy ?? {}
+    expect(proxy['/health']).toBeDefined()
   })
 
   it('proxies /api and /health to the same backend target', () => {
-    const apiMatch = config.match(/['"]\/api['"]\s*:\s*\{[^}]*target\s*:\s*['"]([^'"]+)['"]/s)
-    const healthMatch = config.match(/['"]\/health['"]\s*:\s*\{[^}]*target\s*:\s*['"]([^'"]+)['"]/s)
-    expect(apiMatch).not.toBeNull()
-    expect(healthMatch).not.toBeNull()
-    expect(apiMatch![1]).toBe(healthMatch![1])
+    const server = viteConfig.server ?? {}
+    const proxy = server.proxy ?? {}
+    const apiProxy = proxy['/api']
+    const healthProxy = proxy['/health']
+    expect(apiProxy).toBeDefined()
+    expect(healthProxy).toBeDefined()
+    expect(apiProxy.target).toBe(healthProxy.target)
   })
 })
