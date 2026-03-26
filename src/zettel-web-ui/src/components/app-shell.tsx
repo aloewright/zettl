@@ -6,6 +6,7 @@ import { CaptureButton } from './capture-button'
 import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog'
 import { useCommandMenu } from '@/hooks/use-command-menu'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
+import { useVisualViewport } from '@/hooks/use-visual-viewport'
 import { toast } from 'sonner'
 
 /**
@@ -20,6 +21,7 @@ export function AppShell() {
   const { open, setOpen } = useCommandMenu()
   const [initialQuery, setInitialQuery] = useState('')
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const { keyboardOpen, height: viewportHeight } = useVisualViewport()
 
   // Listen for tag search events from NoteView
   useEffect(() => {
@@ -78,9 +80,12 @@ export function AppShell() {
   useKeyboardShortcuts(shortcutHandlers)
 
   return (
-    <div className="min-h-screen">
+    <div
+      className="min-h-screen"
+      style={keyboardOpen ? { height: `${viewportHeight}px`, overflow: 'auto' } : undefined}
+    >
       <Header onOpenSearch={() => setOpen(true)} />
-      <main className="pb-20">
+      <main className={keyboardOpen ? 'pb-2' : 'pb-20'}>
         <Outlet />
       </main>
       <CommandMenu

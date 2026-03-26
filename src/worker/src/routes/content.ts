@@ -74,6 +74,20 @@ async function findClusterNotes(
   }
 }
 
+/**
+ * Generate AI-written content (topic summary, body, description, and tags) from a seed note and related cluster notes for the specified medium.
+ *
+ * Uses voice configuration and examples for the medium when available to influence tone and audience.
+ *
+ * @param medium - Target medium for the generated content (e.g., "blog" for long-form blog posts; other values produce social-style output)
+ * @param seedNote - Primary source note to base the generation on
+ * @param clusterNotes - Additional related notes to include as context
+ * @returns An object containing:
+ *  - `topicSummary`: a one-sentence summary of the topic,
+ *  - `body`: the generated content in markdown (full blog post for blog medium, thread/post for social),
+ *  - `description`: a short excerpt (two sentences for blog, one sentence for social),
+ *  - `tags`: an array of 3–5 tag strings (for social these are hashtag strings without `#`)
+ */
 async function generateContentFromNotes(
   env: HonoEnv['Bindings'],
   db: ReturnType<typeof import('../db/client').createDb>,
@@ -123,12 +137,24 @@ Return a JSON object with keys: topicSummary (1 sentence), body (tweet thread or
     maxTokens: isBlog ? 2000 : 800,
   })
 
-  const parsed = JSON.parse(stripCodeFences(raw || '{}'))
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(stripCodeFences(raw || '{}'))
+  } catch {
+    // LLM returned non-JSON — use raw text as body
+    console.warn('[content] LLM returned non-JSON, using raw text as body')
+    return {
+      topicSummary: 'Generated content',
+      body: raw,
+      description: '',
+      tags: [],
+    }
+  }
   return {
-    topicSummary: parsed.topicSummary ?? 'Generated content',
-    body: parsed.body ?? '',
-    description: parsed.description ?? '',
-    tags: parsed.tags ?? [],
+    topicSummary: (parsed.topicSummary as string) ?? 'Generated content',
+    body: (parsed.body as string) ?? '',
+    description: (parsed.description as string) ?? '',
+    tags: (parsed.tags as string[]) ?? [],
   }
 }
 
@@ -252,7 +278,13 @@ router.post('/generate/from-note/:noteId', async (c) => {
   const seedNote: ClusterNote = seedRow
   const clusterNotes = await findClusterNotes(c.env.vector_db, db, seedNote)
 
-  const generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  let generated: Awaited<ReturnType<typeof generateContentFromNotes>>
+  try {
+    generated = await generateContentFromNotes(c.env, db, 'blog', seedNote, clusterNotes)
+  } catch (err) {
+    console.error('[content] From-note generation failed:', err)
+    return c.json({ error: `Content generation failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   const generationId = makeId()
   await db.insert(contentGenerations).values({
@@ -574,6 +606,16 @@ router.get('/pieces', async (c) => {
   })
 })
 
+// GET /api/content/pieces/scheduled — must be before /pieces/:id to avoid matching "scheduled" as :id
+router.get('/pieces/scheduled', async (c) => {
+  const db = c.get('db')
+  const rows = await db.select().from(contentPieces)
+    .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
+    .orderBy(contentPieces.scheduledAt)
+
+  return c.json(rows.map(r => normalizePiece(r as unknown as Record<string, unknown>)))
+})
+
 router.get('/pieces/:id', async (c) => {
   const db = c.get('db')
   const [piece] = await db.select().from(contentPieces)
@@ -640,19 +682,6 @@ router.put('/pieces/:id/schedule', async (c) => {
 
   const [updated] = await db.select().from(contentPieces).where(eq(contentPieces.id, id))
   return c.json(updated)
-})
-
-// GET /api/content/pieces/scheduled — get all scheduled pieces
-router.get('/pieces/scheduled', async (c) => {
-  const db = c.get('db')
-  const rows = await db.select().from(contentPieces)
-    .where(sql`${contentPieces.scheduledAt} IS NOT NULL`)
-    .orderBy(contentPieces.scheduledAt)
-
-  return c.json(rows.map(r => ({
-    ...r,
-    generatedTags: parseTags(r.generatedTags),
-  })))
 })
 
 // GET /api/content/pieces/:id/export — markdown export

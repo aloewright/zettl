@@ -4,7 +4,7 @@
  * ALL AI calls go through AI Gateway "x" with unified billing.
  * No provider API keys needed — Cloudflare bills the account directly.
  *
- * Chat/LLM: fetch() → compat endpoint with workers-ai/ prefix
+ * Chat/LLM: fetch() → /compat/... endpoint with model: "dynamic/{routeName}" in body
  * Embeddings/Audio: env.AI.run() with { gateway: { id: GATEWAY_ID } }
  *
  * Both approaches route through AI Gateway and use unified billing.
@@ -53,14 +53,18 @@ function buildGatewayPath(path: string, body: unknown): string {
 }
 
 /**
- * Build gateway auth headers for fetch-based calls.
+ * Construct headers for requests sent through the Cloudflare AI Gateway.
+ *
+ * @param extra - Additional headers to merge into the resulting header map; values in `extra` override defaults.
+ * @returns A map of headers containing `Content-Type: application/json` and, when `env.CF_AIG_TOKEN` is present, both `Authorization: Bearer <token>` and `cf-aig-authorization: Bearer <token>`.
  */
 export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
-  const cfToken = env.CF_AIG_TOKEN
+  const cfToken = env.CF_AIG_TOKEN?.trim()
   if (cfToken) {
+    headers.Authorization = `Bearer ${cfToken}`
     headers['cf-aig-authorization'] = `Bearer ${cfToken}`
   }
   if (extra) Object.assign(headers, extra)
@@ -68,40 +72,80 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
 }
 
 /**
- * POST to AI Gateway (routes dynamic/{route} or compat/{path}) and return the raw Response.
+ * Build the compat endpoint URL.
+ *
+ * All fetch-based AI calls use the compat endpoint. Dynamic routes are selected
+ * by setting `model: "dynamic/{routeName}"` in the request body — the gateway
+ * parses that field and routes to the configured provider/model automatically.
+ */
+function buildGatewayUrl(model: string, path: string): string {
+  if (!model || typeof model !== 'string') {
+    throw new Error('AI Gateway: model is required in request body')
+  }
+  if (model.startsWith('dynamic/')) {
+    const routeName = model.slice('dynamic/'.length)
+    if (!routeName) {
+      throw new Error('AI Gateway: dynamic route name is empty (model="dynamic/")')
+    }
+  }
+  return `${GATEWAY_BASE}/compat${path}`
+}
+
+/**
+ * Send a POST request to the Cloudflare AI Gateway compat endpoint and return the raw Response.
+ *
+ * All requests go to `/compat{path}`. Dynamic routes are selected via the `model` field
+ * in the body (e.g., `model: "dynamic/text_gen"`) — the gateway handles routing internally.
+ *
+ * @param env - Worker environment bindings used to build headers and gateway URL
+ * @param path - Path suffix to append to the selected gateway endpoint
+ * @param body - JSON-serializable request body; if `body.model` is a string it controls routing
+ * @param extraHeaders - Additional headers to merge with the default gateway headers
+ * @returns The fetch `Response` returned by the gateway
+ * @throws Error if the gateway responds with a non-OK status; the error message includes the full URL, HTTP status, and response text
  */
 export async function gatewayFetch(
   env: Env,
   path: string,
-  body: unknown,
+  body: Record<string, unknown>,
   extraHeaders?: Record<string, string>,
 ): Promise<Response> {
-  const url = `${GATEWAY_BASE}${buildGatewayPath(path, body)}`
+  const model = (body.model as string) ?? ''
+  const url = buildGatewayUrl(model, path)
   const headers = gatewayHeaders(env, extraHeaders)
+  const isStreaming = body.stream === true
 
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: typeof body === 'string' ? body : JSON.stringify(body),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`AI Gateway ${path} ${res.status}: ${errText}`)
+    console.error(`AI Gateway error: ${url} ${res.status}: ${errText}`)
+    throw new Error(`AI Gateway request failed: ${res.status}`)
+  }
+
+  if (isStreaming && !res.body) {
+    throw new Error('Expected streaming response but received non-streaming response from gateway')
   }
 
   return res
 }
 
 /**
- * POST to compat endpoint, return parsed JSON.
- * Reads the full body as text first — dynamic routes may use chunked
- * transfer encoding that res.json() doesn't handle in all Workers runtimes.
+ * Send a POST to the AI gateway and parse the full response body as JSON.
+ *
+ * @param path - Gateway path suffix (appended to the computed gateway base URL)
+ * @param body - Request payload; if `body.model` is a string starting with `"dynamic/"` the request is routed to the dynamic route for that model, otherwise it is routed to the compat endpoint
+ * @returns The parsed JSON response as type `T`
+ * @throws Error if the response body is empty or if the response is not valid JSON
  */
 export async function gatewayJSON<T = unknown>(
   env: Env,
   path: string,
-  body: unknown,
+  body: Record<string, unknown>,
 ): Promise<T> {
   const res = await gatewayFetch(env, path, body)
   const text = await res.text()

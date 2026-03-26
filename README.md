@@ -135,8 +135,9 @@ The gateway handles provider selection, logging, caching, rate limiting, and cos
 
 ### Auth
 
-`cf-aig-authorization: Bearer <CF_AIG_TOKEN>` -- a wrangler secret (plain string)
-read directly from `env.CF_AIG_TOKEN`. The gateway resolves providers and models
+`CF_AIG_TOKEN` is a wrangler secret (plain string), read directly from `env.CF_AIG_TOKEN`.
+Fetch-based gateway calls send `Authorization: Bearer <CF_AIG_TOKEN>` (and
+`cf-aig-authorization` for compatibility). The gateway resolves providers and models
 from `model: "dynamic/<route>"`.
 
 ### Key files
