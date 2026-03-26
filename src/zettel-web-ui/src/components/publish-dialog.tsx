@@ -57,6 +57,7 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
       .map(h => h.channel)
   )
 
+
   const toggle = (ch: PublishChannel) => {
     setSelected(prev => {
       const next = new Set(prev)

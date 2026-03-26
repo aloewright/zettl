@@ -7,8 +7,8 @@ import { eq, and } from 'drizzle-orm'
 import { blogPosts, publishLog, appSettings } from '../db/schema'
 import { callMcpTool } from './mcp'
 import { makeId, isoNow } from '../types'
+import { markdownToHtml } from '../pages/blog'
 import type { createDb } from '../db/client'
-import { escapeHtml, markdownToHtml } from '../pages/blog'
 
 type Db = ReturnType<typeof createDb>
 
@@ -212,11 +212,12 @@ function escapeHtml(value: string): string {
 
 async function publishToResend(req: PublishRequest): Promise<PublishResult> {
   try {
+    const emailBodyHtml = markdownToHtml(req.body)
     const result = await callMcpTool('RESEND_SEND_EMAIL', {
       from: req.emailFrom ?? 'blog@thinkingfeeling.com',
       to: req.emailTo,
       subject: req.emailSubject ?? req.title,
-      html: `<h1>${escapeHtml(req.title)}</h1>${escapeHtml(req.body).replace(/\n/g, '<br/>')}`,
+      html: `<h1>${escapeHtml(req.title)}</h1>${emailBodyHtml}`,
     }) as { successful?: boolean; data?: { id?: string } }
 
     const isSuccessful = result?.successful === true

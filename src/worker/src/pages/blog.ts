@@ -18,6 +18,13 @@ interface BlogListItem {
   tags: string[]
 }
 
+const CODEBLOCK_PLACEHOLDER_PREFIX = '\x00CODEBLOCK'
+const CODEBLOCK_PLACEHOLDER_SUFFIX = '\x00'
+
+function makeCodeBlockPlaceholder(index: number): string {
+  return `${CODEBLOCK_PLACEHOLDER_PREFIX}${index}${CODEBLOCK_PLACEHOLDER_SUFFIX}`
+}
+
 const BLOG_CSS = `
   :root {
     --bg: #fafaf9;
@@ -107,11 +114,13 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
-/** Strips unsafe URL schemes (javascript:, data:, vbscript:) from href/src values. */
-function sanitizeUrl(url: string): string {
+/** Returns the URL unchanged if it uses a safe scheme, otherwise '#'. */
+function safeUrl(url: string): string {
   const trimmed = url.trim()
-  if (/^(?:javascript|data|vbscript):/i.test(trimmed)) return '#'
-  return trimmed
+  // Allow relative URLs, http, https, mailto
+  if (/^(https?:|mailto:|\/|\.\/|\.\.\/)/i.test(trimmed)) return trimmed
+  // Block everything else (javascript:, data:, vbscript:, etc.)
+  return '#'
 }
 
 function formatDate(iso: string): string {
@@ -122,18 +131,23 @@ function formatDate(iso: string): string {
   }
 }
 
-function isValidUrl(url: string): boolean {
-  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')
-}
-
 /** Minimal markdown → HTML (handles common patterns, no external deps). */
 export function markdownToHtml(md: string): string {
-  let html = md
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
-    `<pre><code class="language-${lang}">${escapeHtml(code.trimEnd())}</code></pre>`)
+  // Step 1: Extract fenced code blocks into placeholders so their content
+  // isn't double-escaped and markdown patterns don't match inside them.
+  const codeBlocks: string[] = []
+  let html = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    const placeholder = makeCodeBlockPlaceholder(codeBlocks.length)
+    codeBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trimEnd())}</code></pre>`)
+    return placeholder
+  })
+
+  // Step 2: HTML-escape all remaining content to prevent XSS from raw HTML in markdown.
+  html = escapeHtml(html)
+
+  // Step 3: Apply markdown transformations (captured groups are already escaped).
   // Inline code
-  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
+  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`)
   // Headings
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -143,10 +157,14 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   // Links & images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) =>
-    isValidUrl(url) ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />` : '')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
-    isValidUrl(url) ? `<a href="${escapeHtml(url)}">${text}</a>` : text)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {
+    const sanitized = safeUrl(url)
+    return sanitized !== '#' ? `<img src="${escapeHtml(sanitized)}" alt="${escapeHtml(alt)}" />` : ''
+  })
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+    const sanitized = safeUrl(url)
+    return sanitized !== '#' ? `<a href="${escapeHtml(sanitized)}">${text}</a>` : text
+  })
   // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
@@ -156,12 +174,19 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-  // Paragraphs — wrap lines not already wrapped in block elements
+
+  // Step 4: Paragraphs — wrap lines not already wrapped in block elements
   const lines = html.split('\n')
   const result: string[] = []
   let inParagraph = false
   for (const line of lines) {
     const trimmed = line.trim()
+    // Code block placeholders are block-level
+    if (/^\x00CODEBLOCK\d+\x00$/.test(trimmed)) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false }
+      result.push(trimmed)
+      continue
+    }
     if (!trimmed) {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       continue
@@ -178,8 +203,11 @@ export function markdownToHtml(md: string): string {
   if (inParagraph) result.push('</p>')
   html = result.join('\n')
 
-  // Step 4: Restore extracted code blocks.
-  const placeholderRe = new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g')
+  // Step 5: Restore extracted code blocks.
+  const placeholderRe = new RegExp(
+    `${CODEBLOCK_PLACEHOLDER_PREFIX}(\\d+)${CODEBLOCK_PLACEHOLDER_SUFFIX}`,
+    'g',
+  )
   html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
 
   return html
