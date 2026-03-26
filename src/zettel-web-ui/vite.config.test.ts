@@ -64,17 +64,16 @@ describe('vite.config.ts workbox config', () => {
 describe('vite.config.ts PWA plugin config', () => {
   it('registers VitePWA plugin', () => {
     const plugins = Array.isArray(viteConfig.plugins)
-      ? viteConfig.plugins
+      ? viteConfig.plugins.flat()
       : viteConfig.plugins
         ? [viteConfig.plugins]
         : []
-    const hasPwaPlugin = plugins.some((plugin: unknown) => {
-      return (
-        plugin != null &&
-        typeof plugin === 'object' &&
-        'name' in plugin &&
-        (plugin as { name?: unknown }).name === 'vite-plugin-pwa'
-      )
+    const hasPwaPlugin = plugins.some((plugin) => {
+      if (plugin == null || typeof plugin !== 'object' || !('name' in plugin)) {
+        return false
+      }
+      const name = (plugin as { name?: unknown }).name
+      return typeof name === 'string' && name.startsWith('vite-plugin-pwa')
     })
     expect(hasPwaPlugin).toBe(true)
   })
@@ -100,10 +99,10 @@ describe('vite.config.ts dev server proxy config', () => {
   it('proxies /api and /health to the same backend target', () => {
     const server = viteConfig.server
     const proxy = server?.proxy
-    const apiProxy = proxy?.['/api'] as any
-    const healthProxy = proxy?.['/health'] as any
+    const apiProxy = proxy?.['/api']
+    const healthProxy = proxy?.['/health']
     expect(apiProxy).toBeDefined()
     expect(healthProxy).toBeDefined()
-    expect(apiProxy.target).toBe(healthProxy.target)
+    expect(apiProxy?.target).toBe(healthProxy?.target)
   })
 })
