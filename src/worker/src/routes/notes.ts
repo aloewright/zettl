@@ -54,7 +54,7 @@ router.get('/', async (c) => {
   }, {})
 
   return c.json({
-    items: rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ tag })) })),
+    items: rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ noteId: r.id, tag })) })),
     totalCount: countRows[0]?.count ?? 0,
   })
 })
@@ -78,7 +78,7 @@ router.get('/inbox', async (c) => {
   // Frontend expects { items, totalCount } with tags as { tag: string }[]
   const items = rows.map(r => ({
     ...r,
-    tags: (tagMap[r.id] ?? []).map(t => ({ tag: t })),
+    tags: (tagMap[r.id] ?? []).map(t => ({ noteId: r.id, tag: t })),
   }))
   return c.json({ items, totalCount: items.length })
 })
@@ -137,7 +137,7 @@ router.get('/discover', async (c) => {
     return acc
   }, {})
 
-  return c.json(rows.map(r => ({ ...r, tags: tagMap[r.id] ?? [] })))
+  return c.json(rows.map(r => ({ ...r, tags: (tagMap[r.id] ?? []).map(tag => ({ noteId: r.id, tag })) })))
 })
 
 router.get('/search-titles', async (c) => {
@@ -217,7 +217,7 @@ router.get('/:id', async (c) => {
   const [note] = await db.select().from(notes).where(eq(notes.id, id))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
-  const tags = await db.select({ tag: noteTags.tag })
+  const tags = await db.select({ noteId: noteTags.noteId, tag: noteTags.tag })
     .from(noteTags).where(eq(noteTags.noteId, id))
 
   return c.json({ ...note, tags })
@@ -270,7 +270,7 @@ router.post('/', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: id })
 
   const [created] = await db.select().from(notes).where(eq(notes.id, id))
-  return c.json({ ...created, tags: (body.tags ?? []).map(tag => ({ tag })) }, 201)
+  return c.json({ ...created, tags: (body.tags ?? []).map(tag => ({ noteId: id, tag })) }, 201)
 })
 
 router.put('/:id', async (c) => {
@@ -332,7 +332,7 @@ router.put('/:id', async (c) => {
   }
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
-  const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
+  const tags = await db.select({ noteId: noteTags.noteId, tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
   return c.json({ ...updated, tags })
 })
 
@@ -358,7 +358,7 @@ router.post('/:id/promote', async (c) => {
 
   await db.update(notes).set({ status: 'Permanent', updatedAt: isoNow() }).where(eq(notes.id, id))
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
-  const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
+  const tags = await db.select({ noteId: noteTags.noteId, tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
   return c.json({ ...updated, tags })
 })
 
@@ -441,7 +441,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: targetId })
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, targetId))
-  return c.json({ ...updated, tags: [...mergedTagSet].map(tag => ({ tag })) })
+  return c.json({ ...updated, tags: [...mergedTagSet].map(tag => ({ noteId: targetId, tag })) })
 })
 
 // ── Suggested tags ─────────────────────────────────────────────────────────────
