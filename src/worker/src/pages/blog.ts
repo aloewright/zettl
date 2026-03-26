@@ -21,6 +21,10 @@ interface BlogListItem {
 const CODEBLOCK_PLACEHOLDER_PREFIX = '\x00CODEBLOCK'
 const CODEBLOCK_PLACEHOLDER_SUFFIX = '\x00'
 
+function makeCodeBlockPlaceholder(index: number): string {
+  return `${CODEBLOCK_PLACEHOLDER_PREFIX}${index}${CODEBLOCK_PLACEHOLDER_SUFFIX}`
+}
+
 const BLOG_CSS = `
   :root {
     --bg: #fafaf9;
@@ -133,7 +137,7 @@ export function markdownToHtml(md: string): string {
   // isn't double-escaped and markdown patterns don't match inside them.
   const codeBlocks: string[] = []
   let html = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const placeholder = `${CODEBLOCK_PLACEHOLDER_PREFIX}${codeBlocks.length}${CODEBLOCK_PLACEHOLDER_SUFFIX}`
+    const placeholder = makeCodeBlockPlaceholder(codeBlocks.length)
     codeBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trimEnd())}</code></pre>`)
     return placeholder
   })
@@ -153,10 +157,14 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   // Links & images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) =>
-    safeUrl(url) !== '#' ? `<img src="${escapeHtml(safeUrl(url))}" alt="${escapeHtml(alt)}" />` : '')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
-    safeUrl(url) !== '#' ? `<a href="${escapeHtml(safeUrl(url))}">${text}</a>` : text)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {
+    const sanitized = safeUrl(url)
+    return sanitized !== '#' ? `<img src="${escapeHtml(sanitized)}" alt="${escapeHtml(alt)}" />` : ''
+  })
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+    const sanitized = safeUrl(url)
+    return sanitized !== '#' ? `<a href="${escapeHtml(sanitized)}">${text}</a>` : text
+  })
   // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
