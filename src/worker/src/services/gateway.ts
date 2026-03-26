@@ -19,6 +19,39 @@ export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/
 /** Options to pass to env.AI.run() to route through AI Gateway. */
 export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
 
+function extractModel(body: unknown): string | undefined {
+  let obj: unknown = body
+  if (typeof body === 'string') {
+    try {
+      obj = JSON.parse(body)
+    } catch {
+      return undefined
+    }
+  }
+  if (typeof obj !== 'object' || obj === null) return undefined
+  const maybeModel = (obj as { model?: unknown }).model
+  return typeof maybeModel === 'string' ? maybeModel : undefined
+}
+
+/**
+ * Cloudflare AI Gateway uses different paths for dynamic routes (fallback /
+ * unified billing) vs compat endpoints. Route dynamic/<name> traffic to
+ * /dynamic/<name>/{path}; everything else stays on /compat/{path}.
+ */
+function buildGatewayPath(path: string, body: unknown): string {
+  const model = extractModel(body)
+  const dynamicMatch = model?.match(/^(?:dynamic|ai-gateway)\/(.+)$/)
+  if (dynamicMatch?.[1]) {
+    const route = dynamicMatch[1]
+    // Only allow simple, safe route names and encode before interpolating.
+    if (!/^[A-Za-z0-9_-]+$/.test(route)) {
+      return `/compat${path}`
+    }
+    return `/dynamic/${encodeURIComponent(route)}${path}`
+  }
+  return `/compat${path}`
+}
+
 /**
  * Construct headers for requests sent through the Cloudflare AI Gateway.
  *

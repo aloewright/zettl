@@ -125,13 +125,13 @@ Static assets: React SPA served via Cloudflare Static Assets binding
 **unified billing**. No direct model calls, no provider API keys in the worker.
 The gateway handles provider selection, logging, caching, rate limiting, and cost.
 
-| Route           | Endpoint pattern                | Purpose                                      |
-| --------------- | ------------------------------- | -------------------------------------------- |
-| `text_gen`      | `/compat/chat/completions`      | LLM chat completions and content generation  |
-| `research_gen`  | `/compat/chat/completions`      | Web research (Perplexity)                    |
-| `ai_embed`      | `/compat/embeddings`            | Text embeddings (pplx-embed-context-v1-4b, 2056-dim) |
-| `audio_gen`     | `/compat/audio/speech`          | Text-to-speech                               |
-| `stt_gen`       | `/compat/audio/transcriptions`  | Speech-to-text                               |
+| Route           | Endpoint pattern                          | Purpose                                      |
+| --------------- | ----------------------------------------- | -------------------------------------------- |
+| `text_gen`      | `/dynamic/text_gen/chat/completions`      | LLM chat completions and content generation  |
+| `research_gen`  | `/dynamic/research_gen/chat/completions`  | Web research (Perplexity)                    |
+| `ai_embed`      | `/compat/embeddings`                      | Text embeddings (pplx-embed-context-v1-4b, 2056-dim) |
+| `audio_gen`     | `/compat/audio/speech`                    | Text-to-speech                               |
+| `stt_gen`       | `/compat/audio/transcriptions`            | Speech-to-text                               |
 
 ### Auth
 
