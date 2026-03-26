@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS "BlogPosts" (
   "OgImage"     TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_blogposts_domain_slug ON "BlogPosts"("Domain", "Slug");
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blogposts_domain_slug ON "BlogPosts"("Domain", "Slug");
 CREATE INDEX IF NOT EXISTS idx_blogposts_domain_published ON "BlogPosts"("Domain", "PublishedAt" DESC);
 CREATE INDEX IF NOT EXISTS idx_blogposts_pieceid ON "BlogPosts"("PieceId");
 
