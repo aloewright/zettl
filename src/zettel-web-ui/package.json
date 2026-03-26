@@ -12,12 +12,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.140",
     "@blocknote/core": "^0.47.2",
     "@blocknote/mantine": "^0.47.2",
     "@blocknote/react": "^0.47.2",
     "@blocknote/shadcn": "^0.47.2",
+    "@blocknote/xl-ai": "^0.47.2",
+    "@cloudflare/ai-chat": "^0.2.5",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-query": "^5.90.21",
+    "agents": "^0.8.4",
+    "ai": "^6.0.138",
+    "ai-elements": "^1.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

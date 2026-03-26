@@ -1,14 +1,11 @@
 import type { Env } from '../types'
-import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, gatewayFetch } from './gateway'
+import { gatewayJSON, gatewayFetch } from './gateway'
 
 // ── Model config ─────────────────────────────────────────────────────────────
-// Using workers-ai/ prefix via compat endpoint (no API keys needed).
-// Once dynamic route API keys are fixed in dashboard, change to:
-//   CHAT_MODEL = 'dynamic/text_gen'
-//   RESEARCH_MODEL = 'dynamic/research_gen'
+// All AI calls route through AI Gateway dynamic routes with unified billing.
 
-const CHAT_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-const RESEARCH_MODEL = 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+const CHAT_MODEL = 'dynamic/text_gen'
+const RESEARCH_MODEL = 'dynamic/research_gen'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +67,12 @@ export async function chatCompletion(
   return text
 }
 
-// ── Chat completion (SSE streaming) ──────────────────────────────────────────
+/**
+ * Creates a streaming chat completion request and returns the response stream.
+ *
+ * @param opts - Options containing `messages` and optional `maxTokens` and `temperature` that control the completion request
+ * @returns The ReadableStream for the model's streaming response body
+ */
 
 export async function chatCompletionStream(
   env: Env,
@@ -89,8 +91,13 @@ export async function chatCompletionStream(
   return res.body!
 }
 
-// ── Research completion ──────────────────────────────────────────────────────
-// Once dynamic routes are fixed, change to: model: 'dynamic/research_gen'
+/**
+ * Request a research-oriented chat completion and return the response text together with any citations.
+ *
+ * @param env - Environment bindings used to call the gateway
+ * @param opts - Completion options; `opts.messages` is the conversation, `opts.maxTokens` overrides the token limit, and `opts.temperature` controls randomness
+ * @returns An object with `text` containing the model's reply (empty string if none) and `citations` containing any returned citation identifiers (empty array if none)
+ */
 
 export async function researchCompletion(
   env: Env,

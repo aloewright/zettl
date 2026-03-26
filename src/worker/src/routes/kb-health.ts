@@ -287,19 +287,25 @@ router.post('/large-notes/:noteId/summarize', async (c) => {
 
   const originalLength = note.content.length
 
-  const summary = await chatCompletion(c.env, {
-    messages: [
-      {
-        role: 'system',
-        content: 'Summarize the following Zettelkasten note into a concise atomic note. Keep the core insight in 2-4 paragraphs. Preserve any wiki-links [[like this]]. Return only the summarized content.',
-      },
-      {
-        role: 'user',
-        content: `Title: ${note.title}\n\n${note.content}`,
-      },
-    ],
-    maxTokens: 600,
-  })
+  let summary: string
+  try {
+    summary = await chatCompletion(c.env, {
+      messages: [
+        {
+          role: 'system',
+          content: 'Summarize the following Zettelkasten note into a concise atomic note. Keep the core insight in 2-4 paragraphs. Preserve any wiki-links [[like this]]. Return only the summarized content.',
+        },
+        {
+          role: 'user',
+          content: `Title: ${note.title}\n\n${note.content}`,
+        },
+      ],
+      maxTokens: 600,
+    })
+  } catch (err) {
+    console.error('[kb-health] Summarize failed:', err)
+    return c.json({ error: `Summarize failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   const summarizedLength = summary.length
 
@@ -327,21 +333,27 @@ router.post('/large-notes/:noteId/split-suggestions', async (c) => {
     .from(notes).where(eq(notes.id, noteId))
   if (!note) return c.json({ error: 'Not found' }, 404)
 
-  const raw = await chatCompletion(c.env, {
-    messages: [
-      {
-        role: 'system',
-        content: `You are a Zettelkasten expert. Analyze this note and suggest how it could be split into
+  let raw: string
+  try {
+    raw = await chatCompletion(c.env, {
+      messages: [
+        {
+          role: 'system',
+          content: `You are a Zettelkasten expert. Analyze this note and suggest how it could be split into
 smaller atomic notes. Return a JSON object with key "notes" containing an array of objects, each with "title" (string) and "content" (string — the full content for that atomic note).`,
-      },
-      {
-        role: 'user',
-        content: `Title: ${note.title}\n\n${note.content}`,
-      },
-    ],
-    responseFormat: { type: 'json_object' },
-    maxTokens: 2000,
-  })
+        },
+        {
+          role: 'user',
+          content: `Title: ${note.title}\n\n${note.content}`,
+        },
+      ],
+      responseFormat: { type: 'json_object' },
+      maxTokens: 2000,
+    })
+  } catch (err) {
+    console.error('[kb-health] Split suggestions failed:', err)
+    return c.json({ error: `Split failed: ${err instanceof Error ? err.message : String(err)}` }, 500)
+  }
 
   try {
     const parsed = JSON.parse(stripCodeFences(raw || '{}'))

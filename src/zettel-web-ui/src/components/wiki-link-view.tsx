@@ -142,8 +142,24 @@ interface WikiLinkViewProps {
   className?: string
 }
 
+/** Convert markdown-style links [text](url) to <a> tags in HTML string. */
+function markdownLinksToHtml(html: string): string {
+  // Don't convert if already inside an <a> tag — only match markdown links
+  // that aren't already rendered as HTML anchors.
+  // Match [text](url) but not [[wikilinks]]
+  return html.replace(
+    /(?<!\[)\[([^\[\]]+?)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  )
+}
+
 export function WikiLinkView({ html, className }: WikiLinkViewProps) {
-  const sanitizedHtml = useMemo(() => DOMPurify.sanitize(html), [html])
+  const sanitizedHtml = useMemo(() => {
+    const withLinks = markdownLinksToHtml(html)
+    return DOMPurify.sanitize(withLinks, {
+      ADD_ATTR: ['target', 'rel'],
+    })
+  }, [html])
 
   const parts = useMemo(() => {
     const segments: Array<{ type: 'text'; html: string } | { type: 'wikilink'; title: string }> = []
