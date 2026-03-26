@@ -57,10 +57,6 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
       .map(h => h.channel)
   )
 
-  // Determine if the Publish button should be disabled due to missing required fields
-  const isMissingRequiredFields =
-    (selected.has('resend') && !emailTo.trim()) ||
-    (selected.has('youtube') && !videoUrl.trim())
 
   const toggle = (ch: PublishChannel) => {
     setSelected(prev => {
