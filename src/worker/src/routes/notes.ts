@@ -75,7 +75,7 @@ router.get('/inbox', async (c) => {
     return acc
   }, {})
 
-  // Frontend expects { items, totalCount } with tags as { tag: string }[]
+  // Frontend expects { items, totalCount } with tags as { noteId: string; tag: string }[]
   const items = rows.map(r => ({
     ...r,
     tags: (tagMap[r.id] ?? []).map(t => ({ noteId: r.id, tag: t })),
