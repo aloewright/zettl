@@ -141,11 +141,22 @@ async function publishToYouTube(req: PublishRequest): Promise<PublishResult> {
 
 async function publishToResend(req: PublishRequest): Promise<PublishResult> {
   try {
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+async function publishToResend(req: PublishRequest): Promise<PublishResult> {
+  try {
     const result = await callMcpTool('RESEND_SEND_EMAIL', {
       from: req.emailFrom ?? 'blog@thinkingfeeling.com',
       to: req.emailTo,
       subject: req.emailSubject ?? req.title,
-      html: `<h1>${req.title}</h1>${req.body.replace(/\n/g, '<br/>')}`,
+      html: `<h1>${escapeHtml(req.title)}</h1>${escapeHtml(req.body).replace(/\n/g, '<br/>')}`,
     }) as { successful?: boolean; data?: { id?: string } }
 
     if (result?.successful !== false) {
