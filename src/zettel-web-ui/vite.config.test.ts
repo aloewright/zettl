@@ -63,7 +63,20 @@ describe('vite.config.ts workbox config', () => {
 
 describe('vite.config.ts PWA plugin config', () => {
   it('registers VitePWA plugin', () => {
-    expect(pwaOptions).toBeDefined()
+    const plugins = Array.isArray(viteConfig.plugins)
+      ? viteConfig.plugins
+      : viteConfig.plugins
+        ? [viteConfig.plugins]
+        : []
+    const hasPwaPlugin = plugins.some((plugin: unknown) => {
+      return (
+        plugin != null &&
+        typeof plugin === 'object' &&
+        'name' in plugin &&
+        (plugin as { name?: unknown }).name === 'vite-plugin-pwa'
+      )
+    })
+    expect(hasPwaPlugin).toBe(true)
   })
 
   it('uses autoUpdate registration type', () => {
