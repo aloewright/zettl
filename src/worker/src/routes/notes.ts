@@ -332,7 +332,10 @@ router.put('/:id', async (c) => {
   }
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, id))
-  const tags = await db.select({ tag: noteTags.tag }).from(noteTags).where(eq(noteTags.noteId, id))
+  const tags = await db
+    .select({ noteId: noteTags.noteId, tag: noteTags.tag })
+    .from(noteTags)
+    .where(eq(noteTags.noteId, id))
   return c.json({ ...updated, tags })
 })
 
