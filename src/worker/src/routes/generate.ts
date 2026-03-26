@@ -70,7 +70,7 @@ router.post('/stream', async (c) => {
     }
   }
 
-  // If no tools, just stream directly via compat endpoint
+  // If no tools, stream via the AI Gateway dynamic route using the compat /chat/completions API
   if (!mcpTools.length) {
     let res: Response
     try {
