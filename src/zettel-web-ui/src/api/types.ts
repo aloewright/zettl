@@ -187,6 +187,7 @@ export interface ContentPiece {
   editorFeedback: string | null
   sentToDraftAt: string | null
   draftReference: string | null
+  scheduledAt: string | null
 }
 
 export interface VoiceExample {

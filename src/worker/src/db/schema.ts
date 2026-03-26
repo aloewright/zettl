@@ -63,6 +63,7 @@ export const contentPieces = sqliteTable('ContentPieces', {
   status: text('Status').notNull().default('Draft'),
   createdAt: text('CreatedAt').notNull(),
   reviewedAt: text('ReviewedAt'),
+  scheduledAt: text('ScheduledAt'),
 })
 
 export const usedSeedNotes = sqliteTable('UsedSeedNotes', {

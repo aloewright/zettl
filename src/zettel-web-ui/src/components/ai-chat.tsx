@@ -1,23 +1,26 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Mic, MicOff, Paperclip, X, Loader2, Bot, User, Plug } from 'lucide-react'
+import { useRef, useEffect, useCallback, useState } from 'react'
+import { useAgent } from 'agents/react'
+import { useAgentChat } from '@cloudflare/ai-chat/react'
+import type { UIMessage } from 'ai'
+import { Send, Mic, MicOff, Paperclip, X, Bot, User, Plug, Square, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useComposioConfig } from '@/hooks/use-composio'
 import { toast } from 'sonner'
-
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
 
 interface AiChatProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+function getMessageText(message: UIMessage): string {
+  return message.parts
+    .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+    .map(part => part.text)
+    .join('')
+}
+
 export function AiChat({ open, onOpenChange }: AiChatProps) {
-  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [attachedFile, setAttachedFile] = useState<{ name: string; dataUrl: string } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -28,6 +31,38 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
 
   // Composio MCP config
   const { data: composioConfig } = useComposioConfig()
+
+  // Connect to the ChatAgent Durable Object via WebSocket
+  const agent = useAgent({
+    agent: 'ChatAgent',
+  })
+
+  // AI chat hook — manages messages, streaming, tool calls over WebSocket
+  const {
+    messages,
+    sendMessage,
+    stop,
+    status,
+    clearHistory,
+  } = useAgentChat({
+    agent,
+    onToolCall: async ({ toolCall, addToolOutput }) => {
+      if (toolCall.toolName === 'getUserTimezone') {
+        addToolOutput({
+          toolCallId: toolCall.toolCallId,
+          output: {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            localTime: new Date().toLocaleTimeString(),
+          },
+        })
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(`Chat failed: ${error.message}`)
+    },
+  })
+
+  const isStreaming = status === 'streaming'
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -41,93 +76,21 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
     if (open) inputRef.current?.focus()
   }, [open])
 
-  const handleSend = async () => {
-    const trimmed = input.trim()
-    if (!trimmed && !attachedFile) return
+  const send = useCallback(() => {
+    const text = input.trim()
+    if (!text && !attachedFile) return
     if (isStreaming) return
 
-    const userContent = attachedFile
-      ? `[Attached: ${attachedFile.name}]\n\n${trimmed}`
-      : trimmed
-
-    const userMessage: Message = { role: 'user', content: userContent }
-    const newMessages = [...messages, userMessage]
-    setMessages(newMessages)
+    const content = attachedFile ? `[Attached: ${attachedFile.name}]\n\n${text}` : text
     setInput('')
     setAttachedFile(null)
-    setIsStreaming(true)
-
-    try {
-      const composioHint = composioConfig?.enabled
-        ? ' You also have access to external tools via Composio MCP. The user can search and execute tools from connected services like GitHub, Slack, Notion, etc.'
-        : ''
-
-      const systemMessage = {
-        role: 'system' as const,
-        content: `You are a helpful AI assistant for a personal Zettelkasten knowledge management system. Help the user think through ideas, answer questions, and suggest connections between concepts. Keep responses concise and useful.${composioHint}`,
-      }
-
-      const apiMessages = [
-        systemMessage,
-        ...newMessages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-      ]
-
-      const res = await fetch('/api/generate/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ messages: apiMessages, maxTokens: 1500, temperature: 0.7 }),
-      })
-
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-      if (!res.body) throw new Error('No stream body')
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let assistantContent = ''
-
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
-
-          try {
-            const parsed = JSON.parse(data)
-            const delta = parsed.choices?.[0]?.delta?.content
-            if (delta) {
-              assistantContent += delta
-              setMessages(prev => {
-                const updated = [...prev]
-                updated[updated.length - 1] = { role: 'assistant', content: assistantContent }
-                return updated
-              })
-            }
-          } catch {
-            // skip malformed chunks
-          }
-        }
-      }
-    } catch (err) {
-      toast.error(`Chat failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
-      setMessages(prev => prev.filter(m => m.content !== ''))
-    } finally {
-      setIsStreaming(false)
-    }
-  }
+    sendMessage({ role: 'user', parts: [{ type: 'text', text: content }] })
+  }, [input, attachedFile, isStreaming, sendMessage])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      send()
     }
   }
 
@@ -170,8 +133,6 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
 
         try {
-          const formData = new FormData()
-          formData.append('audio', audioBlob)
           const res = await fetch('/api/stt', {
             method: 'POST',
             credentials: 'same-origin',
@@ -204,10 +165,18 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
         <div className="flex items-center gap-2">
           <Bot className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">AI Chat</span>
+          {status === 'streaming' && (
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          )}
         </div>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onOpenChange(false)}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearHistory}>
+            Clear
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onOpenChange(false)}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -217,29 +186,49 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
             Ask anything about your knowledge base, brainstorm ideas, or get help thinking through concepts.
           </p>
         )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`mb-3 flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'assistant' && (
-              <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
-                <Bot className="h-3.5 w-3.5" />
+        {messages.map((msg: UIMessage, index: number) => {
+          const text = getMessageText(msg)
+          const isUser = msg.role === 'user'
+          const isLastAssistant = msg.role === 'assistant' && index === messages.length - 1
+          return (
+            <div key={msg.id} className={`mb-3 flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+              {!isUser && (
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
+                  <Bot className="h-3.5 w-3.5" />
+                </div>
+              )}
+              <div
+                className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                  isUser
+                    ? 'bg-foreground text-background'
+                    : 'bg-muted text-foreground'
+                }`}
+              >
+                {/* Render tool invocations */}
+                {msg.parts
+                  .filter(p => p.type === 'tool-invocation')
+                  .map((part, i) => (
+                    <div key={i} className="mb-1 rounded bg-background/50 px-2 py-1 text-xs text-muted-foreground">
+                      {'toolInvocation' in part && (
+                        <span>Tool: {(part as unknown as { toolInvocation: { toolName: string } }).toolInvocation.toolName}</span>
+                      )}
+                    </div>
+                  ))}
+                <p className="whitespace-pre-wrap">
+                  {text || (isStreaming && isLastAssistant ? '...' : '')}
+                  {isLastAssistant && isStreaming && text && (
+                    <span className="ml-0.5 inline-block h-[1em] w-0.5 animate-pulse bg-foreground align-text-bottom" />
+                  )}
+                </p>
               </div>
-            )}
-            <div
-              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted text-foreground'
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{msg.content || (isStreaming ? '...' : '')}</p>
+              {isUser && (
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground">
+                  <User className="h-3.5 w-3.5 text-background" />
+                </div>
+              )}
             </div>
-            {msg.role === 'user' && (
-              <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground">
-                <User className="h-3.5 w-3.5 text-background" />
-              </div>
-            )}
-          </div>
-        ))}
+          )
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -256,7 +245,13 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
 
       {/* Input area */}
       <div className="border-t border-border p-3">
-        <div className="flex items-end gap-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            send()
+          }}
+          className="flex items-end gap-2"
+        >
           <div className="flex gap-1">
             <input
               ref={fileInputRef}
@@ -266,6 +261,7 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
               className="hidden"
             />
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               className="h-8 w-8 p-0 text-muted-foreground"
@@ -275,6 +271,7 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
               <Paperclip className="h-4 w-4" />
             </Button>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               className={`h-8 w-8 p-0 ${isRecording ? 'text-red-500' : 'text-muted-foreground'}`}
@@ -299,15 +296,21 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
             className="flex-1 resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ maxHeight: '100px' }}
           />
-          <Button
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={handleSend}
-            disabled={(!input.trim() && !attachedFile) || isStreaming}
-          >
-            {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
-        </div>
+          {isStreaming ? (
+            <Button type="button" size="sm" className="h-8 w-8 p-0" variant="destructive" onClick={stop}>
+              <Square className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              className="h-8 w-8 p-0"
+              disabled={!input.trim() && !attachedFile}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
+        </form>
       </div>
     </div>
   )

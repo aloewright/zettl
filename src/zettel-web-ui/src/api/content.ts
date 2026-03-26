@@ -87,6 +87,14 @@ export function sendToDraft(id: string): Promise<ContentPiece> {
   return post<ContentPiece>(`/api/content/pieces/${encodeURIComponent(id)}/send-to-draft`)
 }
 
+export function schedulePiece(id: string, scheduledAt: string | null): Promise<ContentPiece> {
+  return put<ContentPiece>(`/api/content/pieces/${encodeURIComponent(id)}/schedule`, { scheduledAt })
+}
+
+export function getScheduledPieces(): Promise<ContentPiece[]> {
+  return get<ContentPiece[]>('/api/content/pieces/scheduled')
+}
+
 // Voice
 
 export function listVoiceExamples(): Promise<VoiceExample[]> {

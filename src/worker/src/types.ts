@@ -10,6 +10,8 @@ export interface Env {
   CF_AIG_TOKEN?: string       // AI Gateway auth token (wrangler secret, fallback for fetch)
   // AI binding — pre-authenticated, no cf-aig-authorization header needed
   AI: Ai
+  // Durable Object binding for ChatAgent
+  ChatAgent: DurableObjectNamespace
   CAPTURE_WEBHOOK_SECRET?: SecretsStoreSecret // optional binding
   TELEGRAM_BOT_TOKEN?: SecretsStoreSecret     // optional binding
   BRAVE_API_KEY?: SecretsStoreSecret          // optional binding

@@ -53,14 +53,41 @@ async function executeTask(
 
   let findings: Array<{ title: string; synthesis: string; sourceUrl: string; sourceType: string }>
   try {
-    const parsed = JSON.parse(stripCodeFences(raw || '{}'))
-    findings = parsed.findings ?? []
+    const cleaned = stripCodeFences(raw || '{}')
+    // Try to extract JSON from the response (model may include extra text around it)
+    let jsonStr = cleaned
+    const jsonMatch = cleaned.match(/\{[\s\S]*"findings"[\s\S]*\}/)
+    if (jsonMatch) jsonStr = jsonMatch[0]
+
+    const parsed = JSON.parse(jsonStr)
+    // Support both "findings" and "tasks" keys (model may use either)
+    const items = parsed.findings ?? parsed.results ?? parsed.tasks ?? []
+    findings = Array.isArray(items) ? items : []
+
+    if (findings.length === 0) {
+      throw new Error('No findings in parsed JSON')
+    }
   } catch {
-    // If Perplexity didn't return structured JSON, wrap the entire response as a single finding
-    console.warn(`[research] Perplexity returned non-JSON for task ${task.id}, wrapping as single finding`)
+    // If structured JSON parsing fails, wrap the entire response as a single finding
+    // But strip any JSON wrapper if the text is just a JSON blob
+    console.warn(`[research] Non-JSON response for task ${task.id}, wrapping as single finding`)
+    let synthesisText = raw
+    // If the raw text looks like JSON, try to extract meaningful content from it
+    try {
+      const obj = JSON.parse(stripCodeFences(raw || ''))
+      if (typeof obj === 'object' && obj !== null) {
+        // Extract first string value that looks like content
+        const values = Object.values(obj).flat()
+        const textValues = values.filter((v): v is string => typeof v === 'string' && v.length > 20)
+        if (textValues.length > 0) {
+          synthesisText = textValues.join('\n\n')
+        }
+      }
+    } catch { /* not JSON, use raw */ }
+
     findings = [{
       title: task.query,
-      synthesis: raw,
+      synthesis: synthesisText,
       sourceUrl: citations[0] ?? '',
       sourceType: 'Web',
     }]

@@ -684,7 +684,7 @@ SSE streaming chat completion.
 ## Publish
 
 ### `POST /api/publish`
-Publish a content piece to one or more channels (blog, linkedin, youtube, resend).
+Publish a content piece to one or more channels (blog, LinkedIn, YouTube, Resend).
 
 **Body:**
 ```json
