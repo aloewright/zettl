@@ -3,12 +3,13 @@
  * Publishes content pieces to: Cloudflare blog, LinkedIn, YouTube, Resend email.
  * Uses Composio MCP for external platforms.
  */
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { blogPosts, publishLog, appSettings } from '../db/schema'
 import { callMcpTool } from './mcp'
 import { makeId, isoNow } from '../types'
 import { markdownToHtml, escapeHtml } from '../pages/blog'
 import type { createDb } from '../db/client'
+import { escapeHtml, markdownToHtml } from '../pages/blog'
 
 type Db = ReturnType<typeof createDb>
 
@@ -52,6 +53,29 @@ function slugify(text: string): string {
     .slice(0, 80)
 }
 
+// Reserved slugs that cannot be used for blog posts
+const RESERVED_SLUGS = new Set([
+  'archive',
+  'rss.xml',
+  'rss',
+  'sitemap.xml',
+  'sitemap',
+  'feed',
+  'api',
+  'admin',
+  'index',
+  'robots.txt',
+])
+
+// Validate a slug: no path segments, no dots (except if it's literally a reserved one), not reserved
+function isValidSlug(slug: string): boolean {
+  if (!slug || slug.includes('/') || slug.includes('\\')) return false
+  // Allow reserved slugs to fail via the RESERVED_SLUGS check below
+  if (slug.includes('.') && !RESERVED_SLUGS.has(slug)) return false
+  if (RESERVED_SLUGS.has(slug)) return false
+  return true
+}
+
 // ── Blog (Cloudflare D1) ─────────────────────────────────────────────────────
 
 async function publishToBlog(db: Db, req: PublishRequest): Promise<PublishResult> {
@@ -59,7 +83,27 @@ async function publishToBlog(db: Db, req: PublishRequest): Promise<PublishResult
     return { channel: 'blog', success: false, error: 'No blog domain configured' }
   }
 
-  const slug = req.slug || slugify(req.title) || makeId()
+  // Normalize slug: always run through slugify
+  let slug = req.slug ? slugify(req.slug) : slugify(req.title)
+  if (!slug) slug = makeId()
+
+  // Validate the slug
+  if (!isValidSlug(slug)) {
+    return { channel: 'blog', success: false, error: `Invalid slug: ${slug}` }
+  }
+
+  // Check for existing slug collision on this domain
+  const existing = await db.select({ id: blogPosts.id })
+    .from(blogPosts)
+    .where(and(eq(blogPosts.slug, slug), eq(blogPosts.domain, req.domain)))
+    .get()
+
+  if (existing) {
+    // Generate a unique slug by appending a suffix
+    const suffix = makeId().slice(0, 8)
+    slug = `${slug}-${suffix}`
+  }
+
   const now = isoNow()
   const id = makeId()
 
@@ -83,7 +127,6 @@ async function publishToBlog(db: Db, req: PublishRequest): Promise<PublishResult
       description: req.description ?? null,
       tags: JSON.stringify(req.tags ?? []),
       status: 'published',
-      publishedAt: now,
       updatedAt: now,
     },
   })
@@ -116,9 +159,7 @@ async function publishToLinkedIn(req: PublishRequest): Promise<PublishResult> {
     return {
       channel: 'linkedin',
       success: false,
-      error: result?.successful === false
-        ? 'LinkedIn post creation returned unsuccessful'
-        : 'LinkedIn post creation returned unsuccessful or missing expected data',
+      error: 'LinkedIn post creation returned unsuccessful or missing expected data',
     }
   } catch (err) {
     return { channel: 'linkedin', success: false, error: err instanceof Error ? err.message : String(err) }
@@ -152,9 +193,7 @@ async function publishToYouTube(req: PublishRequest): Promise<PublishResult> {
     return {
       channel: 'youtube',
       success: false,
-      error: result?.successful === false
-        ? 'YouTube upload returned unsuccessful'
-        : 'YouTube upload returned unsuccessful or missing expected data',
+      error: 'YouTube upload returned unsuccessful or missing expected data',
     }
   } catch (err) {
     return { channel: 'youtube', success: false, error: err instanceof Error ? err.message : String(err) }
@@ -163,6 +202,15 @@ async function publishToYouTube(req: PublishRequest): Promise<PublishResult> {
 
 // ── Resend (via Composio MCP) ────────────────────────────────────────────────
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 async function publishToResend(req: PublishRequest): Promise<PublishResult> {
   try {
     const emailBodyHtml = markdownToHtml(req.body)
@@ -170,23 +218,20 @@ async function publishToResend(req: PublishRequest): Promise<PublishResult> {
       from: req.emailFrom ?? 'blog@thinkingfeeling.com',
       to: req.emailTo,
       subject: req.emailSubject ?? req.title,
-      html: `<h1>${escapeHtml(req.title)}</h1>${emailBodyHtml}`,
+      html: `<h1>${escapeHtml(req.title)}</h1>${escapeHtml(req.body).replace(/\n/g, '<br/>')}`,
     }) as { successful?: boolean; data?: { id?: string } }
 
-    if (result?.successful === true) {
+    const isSuccessful = result?.successful === true
+    const externalId = result?.data?.id
+
+    if (isSuccessful && externalId) {
       return {
         channel: 'resend',
         success: true,
-        externalId: result?.data?.id,
+        externalId,
       }
     }
-    return {
-      channel: 'resend',
-      success: false,
-      error: result?.successful === false
-        ? 'Resend email returned unsuccessful'
-        : 'Resend email returned unsuccessful or missing expected data',
-    }
+    return { channel: 'resend', success: false, error: 'Resend email returned unsuccessful or missing expected data' }
   } catch (err) {
     return { channel: 'resend', success: false, error: err instanceof Error ? err.message : String(err) }
   }
@@ -201,34 +246,46 @@ export async function publishToChannel(
 ): Promise<PublishResult> {
   let result: PublishResult
 
-  switch (channel) {
-    case 'blog':
-      result = await publishToBlog(db, req)
-      break
-    case 'linkedin':
-      result = await publishToLinkedIn(req)
-      break
-    case 'youtube':
-      result = await publishToYouTube(req)
-      break
-    case 'resend':
-      result = await publishToResend(req)
-      break
-    default:
-      result = { channel, success: false, error: `Unknown channel: ${channel}` }
+  try {
+    switch (channel) {
+      case 'blog':
+        result = await publishToBlog(db, req)
+        break
+      case 'linkedin':
+        result = await publishToLinkedIn(req)
+        break
+      case 'youtube':
+        result = await publishToYouTube(req)
+        break
+      case 'resend':
+        result = await publishToResend(req)
+        break
+      default:
+        result = { channel, success: false, error: `Unknown channel: ${channel}` }
+    }
+  } catch (err) {
+    result = {
+      channel,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
   }
 
-  // Log the publish attempt
-  await db.insert(publishLog).values({
-    id: makeId(),
-    pieceId: req.pieceId,
-    channel,
-    status: result.success ? 'success' : 'failed',
-    externalUrl: result.externalUrl ?? null,
-    externalId: result.externalId ?? null,
-    errorMessage: result.error ?? null,
-    publishedAt: isoNow(),
-  })
+  try {
+    // Log the publish attempt
+    await db.insert(publishLog).values({
+      id: makeId(),
+      pieceId: req.pieceId,
+      channel,
+      status: result.success ? 'success' : 'failed',
+      externalUrl: result.externalUrl ?? null,
+      externalId: result.externalId ?? null,
+      errorMessage: result.error ?? null,
+      publishedAt: isoNow(),
+    })
+  } catch {
+    // emit telemetry if needed, but don't mask the publish result
+  }
 
   return result
 }

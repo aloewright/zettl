@@ -103,8 +103,15 @@ const BLOG_CSS = `
   .back:hover { color: var(--fg); }
 `
 
-export function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
+/** Strips unsafe URL schemes (javascript:, data:, vbscript:) from href/src values. */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^(?:javascript|data|vbscript):/i.test(trimmed)) return '#'
+  return trimmed
 }
 
 /** Returns the URL unchanged if it uses a safe scheme, otherwise '#'. */
@@ -124,7 +131,11 @@ function formatDate(iso: string): string {
   }
 }
 
-/** Minimal markdown → HTML (handles common patterns, no external deps). Sanitizes user content against XSS. */
+function isValidUrl(url: string): boolean {
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')
+}
+
+/** Minimal markdown → HTML (handles common patterns, no external deps). */
 export function markdownToHtml(md: string): string {
   // Step 1: Extract fenced code blocks into placeholders so their content
   // isn't double-escaped and markdown patterns don't match inside them.
@@ -140,7 +151,7 @@ export function markdownToHtml(md: string): string {
 
   // Step 3: Apply markdown transformations (captured groups are already escaped).
   // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
   // Headings
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -149,16 +160,13 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  // Images — allowlist-based URL safety (only http, https, relative; blocks javascript:, data:, etc.)
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
-    return `<img src="${safeUrl(src)}" alt="${alt}" />`
-  })
-  // Links — same allowlist-based URL safety
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
-    return `<a href="${safeUrl(href)}">${text}</a>`
-  })
-  // Blockquotes — note: after HTML-escaping, '>' becomes '&gt;'
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
+  // Links & images
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) =>
+    isValidUrl(url) ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />` : '')
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
+    isValidUrl(url) ? `<a href="${escapeHtml(url)}">${text}</a>` : text)
+  // Blockquotes
+  html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr />')
   // Unordered lists
@@ -183,7 +191,7 @@ export function markdownToHtml(md: string): string {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       continue
     }
-    const isBlock = /^<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)/.test(trimmed)
+    const isBlock = /^(?:<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)|\x02CB)/.test(trimmed)
     if (isBlock) {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       result.push(trimmed)
@@ -193,13 +201,13 @@ export function markdownToHtml(md: string): string {
     }
   }
   if (inParagraph) result.push('</p>')
+  html = result.join('\n')
 
-  // Step 5: Restore code blocks
-  let output = result.join('\n')
-  codeBlocks.forEach((block, idx) => {
-    output = output.replace(`\x00CODEBLOCK${idx}\x00`, block)
-  })
-  return output
+  // Step 4: Restore extracted code blocks.
+  const placeholderRe = new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g')
+  html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
+
+  return html
 }
 
 function layout(domain: string, title: string, content: string, meta?: { description?: string; ogImage?: string; url?: string }) {
@@ -297,21 +305,24 @@ export function blogNotFoundPage(domain: string): string {
 
 /** RSS feed for the blog. */
 export function blogRssFeed(domain: string, posts: BlogListItem[]): string {
-  const items = posts.slice(0, 20).map(p => `
+  const items = posts.slice(0, 20).map(p => {
+    const escapedSlug = escapeHtml(p.slug)
+    return `
     <item>
       <title>${escapeHtml(p.title)}</title>
-      <link>https://${domain}/${p.slug}</link>
+      <link>https://${escapeHtml(domain)}/${escapedSlug}</link>
       <description>${escapeHtml(p.description ?? '')}</description>
       <pubDate>${new Date(p.publishedAt).toUTCString()}</pubDate>
-      <guid>https://${domain}/${p.slug}</guid>
-    </item>`).join('')
+      <guid>https://${escapeHtml(domain)}/${escapedSlug}</guid>
+    </item>`
+  }).join('')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${escapeHtml(domain)}</title>
-    <link>https://${domain}</link>
+    <link>https://${escapeHtml(domain)}</link>
     <description>Blog at ${escapeHtml(domain)}</description>
-    <atom:link href="https://${domain}/rss.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="https://${escapeHtml(domain)}/rss.xml" rel="self" type="application/rss+xml"/>
     ${items}
   </channel>
 </rss>`

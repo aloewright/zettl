@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { routeAgentRequest } from 'agents'
 import type { HonoEnv, Env, EmbedQueueMessage, EnrichQueueMessage } from './types'
 import { dbMiddleware, authMiddleware } from './middleware/auth'
 import notesRouter from './routes/notes'
@@ -24,10 +25,11 @@ import publishRouter from './routes/publish'
 import blogRouter, { isBlogDomain } from './routes/blog'
 import authRouter from './routes/auth'
 import { createDb } from './db/client'
+import aiChatRouter from './routes/ai-chat'
 import { handleEmbedBatch } from './queues/embedding'
 import { handleEnrichBatch } from './queues/enrichment'
 import { runContentCron } from './cron/content'
-import { gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
+import { GATEWAY_BASE, gatewayHeaders, gatewayJSON, AI_GATEWAY_OPTS } from './services/gateway'
 
 const app = new Hono<HonoEnv>()
 
@@ -76,6 +78,7 @@ app.route('/api/upload', uploadRouter)
 app.route('/api/composio', composioRouter)
 app.route('/api/substack', substackRouter)
 app.route('/api/publish', publishRouter)
+app.route('/api/ai/chat', aiChatRouter)
 
 // ── Media serving (R2) ───────────────────────────────────────────────────────
 
@@ -109,21 +112,37 @@ app.get('/health', (c) => c.json({ status: 'ok', ts: new Date().toISOString() })
 app.get('/api/diag/ai', async (c) => {
   const results: Record<string, unknown> = { ts: new Date().toISOString() }
 
-  // Test A: chat via compat endpoint (workers-ai/ prefix)
+  // Test A: dynamic/text_gen via compat endpoint
   try {
-    const chatRes = await gatewayJSON<{ choices?: Array<{ message?: { content?: string } }> }>(
-      c.env,
-      '/chat/completions',
-      {
-        model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-        messages: [{ role: 'user', content: 'Say ok' }],
-        max_tokens: 5,
-      },
-    )
-    results.A_chat = { ok: true, content: chatRes?.choices?.[0]?.message?.content }
-  } catch (err) { results.A_chat = { ok: false, error: String(err) } }
+    const url = `${GATEWAY_BASE}/compat/chat/completions`
+    const headers = gatewayHeaders(c.env)
+    const body = { model: 'dynamic/text_gen', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    const raw = await res.text()
+    if (!res.ok) {
+      results.A_dynamic = { ok: false, status: res.status, error: raw.slice(0, 500) }
+    } else {
+      const data = JSON.parse(raw)
+      results.A_dynamic = { ok: true, content: data?.choices?.[0]?.message?.content }
+    }
+  } catch (err) { results.A_dynamic = { ok: false, error: String(err) } }
 
-  // Test B: embedding via env.AI.run() with gateway
+  // Test B: workers-ai/ via compat endpoint
+  try {
+    const url = `${GATEWAY_BASE}/compat/chat/completions`
+    const headers = gatewayHeaders(c.env)
+    const body = { model: 'workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast', messages: [{ role: 'user', content: 'Say ok' }], max_tokens: 5 }
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    const raw = await res.text()
+    if (!res.ok) {
+      results.B_workersai = { ok: false, status: res.status, error: raw.slice(0, 500) }
+    } else {
+      const data = JSON.parse(raw)
+      results.B_workersai = { ok: true, content: data?.choices?.[0]?.message?.content }
+    }
+  } catch (err) { results.B_workersai = { ok: false, error: String(err) } }
+
+  // Test C: embedding via env.AI.run() with gateway
   try {
     const embedResult = await c.env.AI.run(
       '@cf/baai/bge-large-en-v1.5',
@@ -131,8 +150,11 @@ app.get('/api/diag/ai', async (c) => {
       AI_GATEWAY_OPTS,
     ) as { data?: number[][] }
     const dims = embedResult?.data?.[0]?.length ?? 0
-    results.B_embed = { ok: dims > 0, dims }
-  } catch (err) { results.B_embed = { ok: false, error: String(err) } }
+    results.C_embed = { ok: dims > 0, dims }
+  } catch (err) { results.C_embed = { ok: false, error: String(err) } }
+
+  // Debug: show if CF_AIG_TOKEN is set
+  results.hasToken = !!c.env.CF_AIG_TOKEN
 
   return c.json(results)
 })
@@ -145,28 +167,47 @@ const blogApp = new Hono<HonoEnv>()
 blogApp.use('*', dbMiddleware)
 blogApp.route('/', blogRouter)
 
+// In-memory cache for blog domain lookups
+const blogDomainCache = new Map<string, { isBlog: boolean; expires: number }>()
+const BLOG_DOMAIN_CACHE_TTL = 60_000 // 60 seconds
+
+// Static asset patterns
+const STATIC_ASSET_PATTERN = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|webp|avif)$/i
+const STATIC_FILES = new Set(['favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json'])
+
 app.all('*', async (c, next) => {
   // Skip API routes and media routes — always handled by the main app
   if (c.req.path.startsWith('/api/') || c.req.path.startsWith('/media/') || c.req.path === '/health') {
     return next()
   }
 
-  // Only check blog domain for HTML navigation requests to avoid D1 load on static assets
-  const acceptHeader = c.req.header('Accept') ?? ''
-  if (!acceptHeader.includes('text/html')) {
+  // Short-circuit static asset requests — no need to check blog domains
+  const path = c.req.path
+  const filename = path.split('/').pop() ?? ''
+  if (STATIC_ASSET_PATTERN.test(path) || STATIC_FILES.has(filename)) {
     return next()
   }
 
-  // Check if this hostname is a blog domain
+  // Check if this hostname is a blog domain (with cache)
   const hostname = new URL(c.req.url).hostname
-  try {
-    const db = createDb(c.env.d1_db)
-    const isBlog = await isBlogDomain(hostname, db)
-    if (isBlog) {
-      return blogApp.fetch(c.req.raw, c.env, c.executionCtx)
+  const now = Date.now()
+  const cached = blogDomainCache.get(hostname)
+
+  let isBlog = false
+  if (cached && cached.expires > now) {
+    isBlog = cached.isBlog
+  } else {
+    try {
+      const db = createDb(c.env.d1_db)
+      isBlog = await isBlogDomain(hostname, db)
+      blogDomainCache.set(hostname, { isBlog, expires: now + BLOG_DOMAIN_CACHE_TTL })
+    } catch {
+      // If DB check fails, fall through to SPA
     }
-  } catch {
-    // If DB check fails, fall through to SPA
+  }
+
+  if (isBlog) {
+    return blogApp.fetch(c.req.raw, c.env, c.executionCtx)
   }
 
   return next()
@@ -212,8 +253,18 @@ async function scheduled(
   }
 }
 
+// Re-export ChatAgent so Durable Objects runtime can find it
+export { ChatAgent } from './chat-agent'
+
 export default {
-  fetch: app.fetch,
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    // Route /agents/* requests to the Cloudflare Agents SDK (Durable Objects)
+    const agentResponse = await routeAgentRequest(request, env)
+    if (agentResponse) return agentResponse
+
+    // All other requests handled by Hono
+    return app.fetch(request, env, ctx)
+  },
   queue,
   scheduled,
 }
