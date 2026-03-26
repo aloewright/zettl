@@ -41,6 +41,8 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
   const [selected, setSelected] = useState<Set<PublishChannel>>(new Set())
   const [slug, setSlug] = useState('')
   const [emailTo, setEmailTo] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoDescription, setVideoDescription] = useState('')
   const [results, setResults] = useState<PublishResult[] | null>(null)
 
   const publish = usePublish()
@@ -54,6 +56,11 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
       .filter(h => h.status === 'success')
       .map(h => h.channel)
   )
+
+  // Determine if the Publish button should be disabled due to missing required fields
+  const isMissingRequiredFields =
+    (selected.has('resend') && !emailTo.trim()) ||
+    (selected.has('youtube') && !videoUrl.trim())
 
   const toggle = (ch: PublishChannel) => {
     setSelected(prev => {
@@ -77,6 +84,8 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
         domain: channels.includes('blog') ? domain : undefined,
         slug: slug || undefined,
         emailTo: channels.includes('resend') ? emailTo : undefined,
+        videoUrl: channels.includes('youtube') ? videoUrl : undefined,
+        videoDescription: channels.includes('youtube') && videoDescription ? videoDescription : undefined,
       })
 
       setResults(response.results)
@@ -102,6 +111,8 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
     setSelected(new Set())
     setSlug('')
     setEmailTo('')
+    setVideoUrl('')
+    setVideoDescription('')
   }
 
   return (
@@ -201,13 +212,35 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
             {/* Resend options */}
             {selected.has('resend') && (
               <div className="space-y-2 rounded-lg border border-border/50 p-3">
-                <label className="text-xs font-medium text-muted-foreground">Send to (email)</label>
+                <label className="text-xs font-medium text-muted-foreground">Send to (email) <span className="text-red-500">*</span></label>
                 <input
                   type="email"
                   value={emailTo}
                   onChange={e => setEmailTo(e.target.value)}
                   placeholder="subscribers@example.com"
                   className="w-full rounded-md border border-border/50 bg-transparent px-2 py-1.5 text-xs placeholder:text-muted-foreground/50"
+                />
+              </div>
+            )}
+
+            {/* YouTube options */}
+            {selected.has('youtube') && (
+              <div className="space-y-2 rounded-lg border border-border/50 p-3">
+                <label className="text-xs font-medium text-muted-foreground">Video URL <span className="text-red-500">*</span></label>
+                <input
+                  type="url"
+                  value={videoUrl}
+                  onChange={e => setVideoUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-md border border-border/50 bg-transparent px-2 py-1.5 text-xs placeholder:text-muted-foreground/50"
+                />
+                <label className="text-xs font-medium text-muted-foreground">Video description (optional)</label>
+                <textarea
+                  value={videoDescription}
+                  onChange={e => setVideoDescription(e.target.value)}
+                  placeholder="Leave blank to use piece description"
+                  rows={2}
+                  className="w-full rounded-md border border-border/50 bg-transparent px-2 py-1.5 text-xs placeholder:text-muted-foreground/50 resize-none"
                 />
               </div>
             )}
@@ -219,7 +252,7 @@ export function PublishDialog({ piece, open, onOpenChange }: PublishDialogProps)
               <Button
                 size="sm"
                 onClick={handlePublish}
-                disabled={!selected.size || publish.isPending}
+                disabled={!selected.size || publish.isPending || isMissingRequiredFields}
               >
                 {publish.isPending ? (
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />

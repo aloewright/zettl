@@ -103,8 +103,17 @@ const BLOG_CSS = `
   .back:hover { color: var(--fg); }
 `
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** Returns the URL unchanged if it uses a safe scheme, otherwise '#'. */
+function safeUrl(url: string): string {
+  const trimmed = url.trim()
+  // Allow relative URLs, http, https, mailto
+  if (/^(https?:|mailto:|\/|\.\/|\.\.\/)/i.test(trimmed)) return trimmed
+  // Block everything else (javascript:, data:, vbscript:, etc.)
+  return '#'
 }
 
 function formatDate(iso: string): string {
@@ -115,12 +124,21 @@ function formatDate(iso: string): string {
   }
 }
 
-/** Minimal markdown → HTML (handles common patterns, no external deps). */
+/** Minimal markdown → HTML (handles common patterns, no external deps). Sanitizes user content against XSS. */
 export function markdownToHtml(md: string): string {
-  let html = md
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
-    `<pre><code class="language-${lang}">${escapeHtml(code.trimEnd())}</code></pre>`)
+  // Step 1: Extract fenced code blocks into placeholders so their content
+  // isn't double-escaped and markdown patterns don't match inside them.
+  const codeBlocks: string[] = []
+  let html = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    const placeholder = `\x00CODEBLOCK${codeBlocks.length}\x00`
+    codeBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trimEnd())}</code></pre>`)
+    return placeholder
+  })
+
+  // Step 2: HTML-escape all remaining content to prevent XSS from raw HTML in markdown.
+  html = escapeHtml(html)
+
+  // Step 3: Apply markdown transformations (captured groups are already escaped).
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
   // Headings
@@ -131,11 +149,16 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  // Links & images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-  // Blockquotes
-  html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
+  // Images — allowlist-based URL safety (only http, https, relative; blocks javascript:, data:, etc.)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
+    return `<img src="${safeUrl(src)}" alt="${alt}" />`
+  })
+  // Links — same allowlist-based URL safety
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
+    return `<a href="${safeUrl(href)}">${text}</a>`
+  })
+  // Blockquotes — note: after HTML-escaping, '>' becomes '&gt;'
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr />')
   // Unordered lists
@@ -143,12 +166,19 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
   // Ordered lists
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-  // Paragraphs — wrap lines not already wrapped in block elements
+
+  // Step 4: Paragraphs — wrap lines not already wrapped in block elements
   const lines = html.split('\n')
   const result: string[] = []
   let inParagraph = false
   for (const line of lines) {
     const trimmed = line.trim()
+    // Code block placeholders are block-level
+    if (/^\x00CODEBLOCK\d+\x00$/.test(trimmed)) {
+      if (inParagraph) { result.push('</p>'); inParagraph = false }
+      result.push(trimmed)
+      continue
+    }
     if (!trimmed) {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       continue
@@ -163,7 +193,13 @@ export function markdownToHtml(md: string): string {
     }
   }
   if (inParagraph) result.push('</p>')
-  return result.join('\n')
+
+  // Step 5: Restore code blocks
+  let output = result.join('\n')
+  codeBlocks.forEach((block, idx) => {
+    output = output.replace(`\x00CODEBLOCK${idx}\x00`, block)
+  })
+  return output
 }
 
 function layout(domain: string, title: string, content: string, meta?: { description?: string; ogImage?: string; url?: string }) {

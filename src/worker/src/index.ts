@@ -151,6 +151,12 @@ app.all('*', async (c, next) => {
     return next()
   }
 
+  // Only check blog domain for HTML navigation requests to avoid D1 load on static assets
+  const acceptHeader = c.req.header('Accept') ?? ''
+  if (!acceptHeader.includes('text/html')) {
+    return next()
+  }
+
   // Check if this hostname is a blog domain
   const hostname = new URL(c.req.url).hostname
   try {

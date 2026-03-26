@@ -11,7 +11,7 @@ import { Hono } from 'hono'
 import { eq, desc, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
-import { contentPieces, blogPosts, publishLog, appSettings } from '../db/schema'
+import { contentPieces, contentGenerations, blogPosts, publishLog, appSettings } from '../db/schema'
 import {
   publishToChannels,
   getDefaultBlogDomain,
@@ -48,10 +48,26 @@ router.post('/', async (c) => {
   const invalid = body.channels.filter(ch => !VALID_CHANNELS.includes(ch))
   if (invalid.length) return c.json({ error: `Invalid channels: ${invalid.join(', ')}` }, 400)
 
-  // Load the content piece
+  // Channel-specific required field validation
+  if (body.channels.includes('resend') && !body.emailTo) {
+    return c.json({ error: 'emailTo is required when publishing to resend' }, 422)
+  }
+  if (body.channels.includes('youtube') && !body.videoUrl) {
+    return c.json({ error: 'videoUrl is required when publishing to youtube' }, 422)
+  }
+
+  // Load the content piece with its parent generation (for topicSummary as title)
   const [piece] = await db.select().from(contentPieces)
     .where(eq(contentPieces.id, body.pieceId))
   if (!piece) return c.json({ error: 'Content piece not found' }, 404)
+
+  let title = piece.description ?? 'Untitled'
+  try {
+    const [gen] = await db.select({ topicSummary: contentGenerations.topicSummary })
+      .from(contentGenerations)
+      .where(eq(contentGenerations.id, piece.generationId))
+    if (gen?.topicSummary) title = gen.topicSummary
+  } catch { /* fall back to description */ }
 
   // Resolve blog domain
   let domain = body.domain
@@ -68,7 +84,7 @@ router.post('/', async (c) => {
 
   const results = await publishToChannels(db, body.channels, {
     pieceId: body.pieceId,
-    title: (piece as unknown as Record<string, unknown>).title as string ?? piece.description ?? 'Untitled',
+    title,
     body: piece.body,
     description: piece.description,
     tags,
@@ -106,7 +122,9 @@ router.get('/blog-posts', async (c) => {
   const offset = Math.max(0, parseInt(skip ?? '0'))
   const size = Math.min(100, Math.max(1, parseInt(take ?? '20')))
 
-  const condition = domain ? eq(blogPosts.domain, domain) : undefined
+  const condition = domain
+    ? and(eq(blogPosts.domain, domain), eq(blogPosts.status, 'published'))
+    : eq(blogPosts.status, 'published')
 
   const [rows, countRows] = await Promise.all([
     db.select().from(blogPosts)
@@ -168,10 +186,21 @@ router.put('/blog-domains', async (c) => {
     return c.json({ error: 'domains must be an array of strings' }, 400)
   }
 
-  // Normalize domains — lowercase, trim whitespace
-  const normalized = body.domains
-    .map(d => d.trim().toLowerCase())
-    .filter(Boolean)
+  // Normalize domains — lowercase, trim whitespace, validate as proper hostnames
+  const normalized: string[] = []
+  for (const d of body.domains) {
+    const trimmed = d.trim().toLowerCase()
+    if (!trimmed) continue
+    try {
+      const parsed = new URL(`https://${trimmed}`)
+      if (parsed.hostname !== trimmed) {
+        return c.json({ error: `Invalid domain: "${d}". Must be a plain hostname (e.g. example.com).` }, 400)
+      }
+    } catch {
+      return c.json({ error: `Invalid domain: "${d}". Must be a valid hostname.` }, 400)
+    }
+    normalized.push(trimmed)
+  }
 
   await db.insert(appSettings)
     .values({ key: 'blog:domains', value: JSON.stringify(normalized) })
