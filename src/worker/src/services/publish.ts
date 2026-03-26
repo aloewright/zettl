@@ -89,15 +89,23 @@ async function publishToLinkedIn(req: PublishRequest): Promise<PublishResult> {
       text: req.body,
     }) as { successful?: boolean; data?: { id?: string; url?: string } }
 
-    if (result?.successful !== false) {
+    const isSuccessful = result?.successful === true
+    const externalUrl = result?.data?.url
+    const externalId = result?.data?.id
+
+    if (isSuccessful && (externalUrl || externalId)) {
       return {
         channel: 'linkedin',
         success: true,
-        externalUrl: result?.data?.url,
-        externalId: result?.data?.id,
+        externalUrl,
+        externalId,
       }
     }
-    return { channel: 'linkedin', success: false, error: 'LinkedIn post creation returned unsuccessful' }
+    return {
+      channel: 'linkedin',
+      success: false,
+      error: 'LinkedIn post creation returned unsuccessful or missing expected data',
+    }
   } catch (err) {
     return { channel: 'linkedin', success: false, error: err instanceof Error ? err.message : String(err) }
   }
