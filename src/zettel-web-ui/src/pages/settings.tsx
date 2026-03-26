@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, Upload, Download, RefreshCw, Activity, LogOut, Plug, Unplug, Check, Sun, Moon, ExternalLink, X, Loader2 } from 'lucide-react'
+import { ArrowLeft, Upload, Download, RefreshCw, Activity, LogOut, Plug, Unplug, Check, Sun, Moon, ExternalLink, X, Loader2, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useTheme } from '@/hooks/use-theme'
@@ -9,6 +9,7 @@ import { useReEmbed } from '@/hooks/use-notes'
 import { useHealth } from '@/hooks/use-health'
 import { useComposioConfig, useUpdateComposioConfig, useComposioConnections, useCreateAuthLink, useDisconnectService } from '@/hooks/use-composio'
 import { useSubstackConfig, useUpdateSubstackConfig } from '@/hooks/use-substack'
+import { useBlogDomains, useUpdateBlogDomains } from '@/hooks/use-publish'
 import { COMPOSIO_SERVICES } from '@/api/composio'
 import { importNotes, exportNotes } from '@/api/import-export'
 import { logout } from '@/auth'
@@ -425,6 +426,11 @@ export function SettingsPage() {
 
       <Separator className="my-6" />
 
+      {/* Blog Domains */}
+      <BlogDomainsSection />
+
+      <Separator className="my-6" />
+
       {/* Substack */}
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Substack</h2>
@@ -588,5 +594,87 @@ export function SettingsPage() {
         </Button>
       </section>
     </div>
+  )
+}
+
+// ── Blog Domains Section ─────────────────────────────────────────────────────
+
+function BlogDomainsSection() {
+  const { data: domainsData } = useBlogDomains()
+  const updateDomains = useUpdateBlogDomains()
+  const [newDomain, setNewDomain] = useState('')
+  const domains = domainsData?.domains ?? []
+
+  const handleAdd = () => {
+    const trimmed = newDomain.trim().toLowerCase()
+    if (!trimmed) return
+    if (domains.includes(trimmed)) {
+      toast.error('Domain already added')
+      return
+    }
+    updateDomains.mutate([...domains, trimmed], {
+      onSuccess: () => {
+        toast.success(`Added ${trimmed}`)
+        setNewDomain('')
+      },
+      onError: () => toast.error('Failed to add domain'),
+    })
+  }
+
+  const handleRemove = (domain: string) => {
+    updateDomains.mutate(domains.filter(d => d !== domain), {
+      onSuccess: () => toast.success(`Removed ${domain}`),
+      onError: () => toast.error('Failed to remove domain'),
+    })
+  }
+
+  return (
+    <section className="space-y-3">
+      <h2 className="flex items-center gap-1.5 text-sm font-medium">
+        <Globe className="h-3.5 w-3.5" />
+        Blog Domains
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Configure Cloudflare domains where your blog is served. Add a custom domain
+        via the Cloudflare Dashboard (Workers &rarr; zettl &rarr; Domains & Routes), then register it here.
+      </p>
+
+      {domains.length > 0 && (
+        <div className="space-y-1.5">
+          {domains.map(d => (
+            <div key={d} className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+              <span className="text-sm font-mono">{d}</span>
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => handleRemove(d)}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newDomain}
+          onChange={(e) => setNewDomain(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
+          placeholder="thinkingfeeling.com"
+          className="flex-1 rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleAdd}
+          disabled={updateDomains.isPending || !newDomain.trim()}
+        >
+          Add
+        </Button>
+      </div>
+    </section>
   )
 }

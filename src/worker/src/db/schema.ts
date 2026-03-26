@@ -95,6 +95,37 @@ export const appSettings = sqliteTable('AppSettings', {
   value: text('Value').notNull(),
 })
 
+// ── Blog posts (published to Cloudflare domains) ────────────────────────────
+
+export const blogPosts = sqliteTable('BlogPosts', {
+  id: text('Id').primaryKey(),
+  pieceId: text('PieceId'),               // link back to ContentPiece (nullable for manual posts)
+  slug: text('Slug').notNull(),
+  title: text('Title').notNull(),
+  body: text('Body').notNull(),            // markdown
+  description: text('Description'),
+  tags: text('Tags').notNull().default('[]'),
+  domain: text('Domain').notNull(),        // e.g. "thinkingfeeling.com"
+  status: text('Status').notNull().default('published'), // published | draft | archived
+  publishedAt: text('PublishedAt').notNull(),
+  updatedAt: text('UpdatedAt').notNull(),
+  ogImage: text('OgImage'),               // optional OG image URL
+})
+
+// ── Publish log (tracks cross-channel publishing) ───────────────────────────
+
+export const publishLog = sqliteTable('PublishLog', {
+  id: text('Id').primaryKey(),
+  pieceId: text('PieceId').notNull(),
+  channel: text('Channel').notNull(),      // 'blog' | 'linkedin' | 'youtube' | 'resend' | 'substack'
+  status: text('Status').notNull().default('pending'), // pending | success | failed
+  externalUrl: text('ExternalUrl'),        // URL of the published content
+  externalId: text('ExternalId'),          // platform-specific ID
+  metadata: text('Metadata'),             // JSON — extra info from the platform
+  errorMessage: text('ErrorMessage'),
+  publishedAt: text('PublishedAt').notNull(),
+})
+
 // ── Research ──────────────────────────────────────────────────────────────────
 
 export const researchAgendas = sqliteTable('ResearchAgendas', {
