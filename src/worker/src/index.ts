@@ -167,22 +167,47 @@ const blogApp = new Hono<HonoEnv>()
 blogApp.use('*', dbMiddleware)
 blogApp.route('/', blogRouter)
 
+// In-memory cache for blog domain lookups
+const blogDomainCache = new Map<string, { isBlog: boolean; expires: number }>()
+const BLOG_DOMAIN_CACHE_TTL = 60_000 // 60 seconds
+
+// Static asset patterns
+const STATIC_ASSET_PATTERN = /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map|webp|avif)$/i
+const STATIC_FILES = new Set(['favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.json'])
+
 app.all('*', async (c, next) => {
   // Skip API routes and media routes — always handled by the main app
   if (c.req.path.startsWith('/api/') || c.req.path.startsWith('/media/') || c.req.path === '/health') {
     return next()
   }
 
-  // Check if this hostname is a blog domain
+  // Short-circuit static asset requests — no need to check blog domains
+  const path = c.req.path
+  const filename = path.split('/').pop() ?? ''
+  if (STATIC_ASSET_PATTERN.test(path) || STATIC_FILES.has(filename)) {
+    return next()
+  }
+
+  // Check if this hostname is a blog domain (with cache)
   const hostname = new URL(c.req.url).hostname
-  try {
-    const db = createDb(c.env.d1_db)
-    const isBlog = await isBlogDomain(hostname, db)
-    if (isBlog) {
-      return blogApp.fetch(c.req.raw, c.env, c.executionCtx)
+  const now = Date.now()
+  const cached = blogDomainCache.get(hostname)
+
+  let isBlog = false
+  if (cached && cached.expires > now) {
+    isBlog = cached.isBlog
+  } else {
+    try {
+      const db = createDb(c.env.d1_db)
+      isBlog = await isBlogDomain(hostname, db)
+      blogDomainCache.set(hostname, { isBlog, expires: now + BLOG_DOMAIN_CACHE_TTL })
+    } catch {
+      // If DB check fails, fall through to SPA
     }
-  } catch {
-    // If DB check fails, fall through to SPA
+  }
+
+  if (isBlog) {
+    return blogApp.fetch(c.req.raw, c.env, c.executionCtx)
   }
 
   return next()

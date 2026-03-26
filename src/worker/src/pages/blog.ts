@@ -104,7 +104,7 @@ const BLOG_CSS = `
 `
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 function formatDate(iso: string): string {
@@ -115,6 +115,10 @@ function formatDate(iso: string): string {
   }
 }
 
+function isValidUrl(url: string): boolean {
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')
+}
+
 /** Minimal markdown → HTML (handles common patterns, no external deps). */
 export function markdownToHtml(md: string): string {
   let html = md
@@ -122,7 +126,7 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
     `<pre><code class="language-${lang}">${escapeHtml(code.trimEnd())}</code></pre>`)
   // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
   // Headings
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -132,8 +136,10 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   // Links & images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) =>
+    isValidUrl(url) ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />` : '')
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
+    isValidUrl(url) ? `<a href="${escapeHtml(url)}">${text}</a>` : text)
   // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
@@ -261,21 +267,24 @@ export function blogNotFoundPage(domain: string): string {
 
 /** RSS feed for the blog. */
 export function blogRssFeed(domain: string, posts: BlogListItem[]): string {
-  const items = posts.slice(0, 20).map(p => `
+  const items = posts.slice(0, 20).map(p => {
+    const escapedSlug = escapeHtml(p.slug)
+    return `
     <item>
       <title>${escapeHtml(p.title)}</title>
-      <link>https://${domain}/${p.slug}</link>
+      <link>https://${escapeHtml(domain)}/${escapedSlug}</link>
       <description>${escapeHtml(p.description ?? '')}</description>
       <pubDate>${new Date(p.publishedAt).toUTCString()}</pubDate>
-      <guid>https://${domain}/${p.slug}</guid>
-    </item>`).join('')
+      <guid>https://${escapeHtml(domain)}/${escapedSlug}</guid>
+    </item>`
+  }).join('')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${escapeHtml(domain)}</title>
-    <link>https://${domain}</link>
+    <link>https://${escapeHtml(domain)}</link>
     <description>Blog at ${escapeHtml(domain)}</description>
-    <atom:link href="https://${domain}/rss.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="https://${escapeHtml(domain)}/rss.xml" rel="self" type="application/rss+xml"/>
     ${items}
   </channel>
 </rss>`

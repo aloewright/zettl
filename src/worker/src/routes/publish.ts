@@ -23,6 +23,29 @@ const router = new Hono<HonoEnv>()
 
 const VALID_CHANNELS: PublishChannel[] = ['blog', 'linkedin', 'youtube', 'resend']
 
+// Helper to get all configured blog domains
+async function getBlogDomains(db: ReturnType<typeof import('../db/client').createDb>): Promise<Set<string>> {
+  const row = await db.select().from(appSettings)
+    .where(eq(appSettings.key, 'blog:domains'))
+    .get()
+  if (!row?.value) return new Set()
+  try {
+    const domains: string[] = JSON.parse(row.value)
+    return new Set(domains.map(d => d.toLowerCase().trim()))
+  } catch {
+    return new Set([row.value.toLowerCase().trim()])
+  }
+}
+
+// Normalize a domain: lowercase, trim, strip protocol/port
+function normalizeDomain(domain: string): string {
+  return domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/:\d+$/, '')
+}
+
 // ── POST /api/publish — publish a piece to channels ──────────────────────────
 
 router.post('/', async (c) => {
@@ -43,7 +66,13 @@ router.post('/', async (c) => {
   }>()
 
   if (!body.pieceId) return c.json({ error: 'pieceId is required' }, 400)
-  if (!body.channels?.length) return c.json({ error: 'At least one channel is required' }, 400)
+  if (!Array.isArray(body.channels)) return c.json({ error: 'channels must be an array' }, 400)
+  if (!body.channels.length) return c.json({ error: 'At least one channel is required' }, 400)
+
+  // Check for duplicates
+  if (body.channels.length !== new Set(body.channels).size) {
+    return c.json({ error: 'channels must not contain duplicates' }, 400)
+  }
 
   const invalid = body.channels.filter(ch => !VALID_CHANNELS.includes(ch))
   if (invalid.length) return c.json({ error: `Invalid channels: ${invalid.join(', ')}` }, 400)
@@ -53,13 +82,23 @@ router.post('/', async (c) => {
     .where(eq(contentPieces.id, body.pieceId))
   if (!piece) return c.json({ error: 'Content piece not found' }, 404)
 
-  // Resolve blog domain
+  // Resolve and validate blog domain
   let domain = body.domain
-  if (body.channels.includes('blog') && !domain) {
-    domain = await getDefaultBlogDomain(db) ?? undefined
-  }
-  if (body.channels.includes('blog') && !domain) {
-    return c.json({ error: 'No blog domain configured. Set one in Settings.' }, 422)
+  if (body.channels.includes('blog')) {
+    if (!domain) {
+      domain = await getDefaultBlogDomain(db) ?? undefined
+    }
+    if (!domain) {
+      return c.json({ error: 'No blog domain configured. Set one in Settings.' }, 422)
+    }
+
+    // Normalize and validate the domain
+    const normalizedDomain = normalizeDomain(domain)
+    const allowedDomains = await getBlogDomains(db)
+    if (!allowedDomains.has(normalizedDomain)) {
+      return c.json({ error: 'Domain is not a configured blog domain' }, 422)
+    }
+    domain = normalizedDomain
   }
 
   // Channel-specific required field validation
@@ -173,6 +212,23 @@ router.put('/blog-domains', async (c) => {
 
   if (!Array.isArray(body.domains)) {
     return c.json({ error: 'domains must be an array of strings' }, 400)
+  }
+
+  // Validate each entry is a string and a bare hostname (no scheme or path)
+  const hostnamePattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i
+  for (const d of body.domains) {
+    if (typeof d !== 'string') {
+      return c.json({ error: 'domains must be an array of hostnames' }, 400)
+    }
+    const trimmed = d.trim()
+    // Check for scheme or path
+    if (trimmed.includes('://') || trimmed.includes('/')) {
+      return c.json({ error: 'domains must be an array of hostnames' }, 400)
+    }
+    // Validate hostname format
+    if (!hostnamePattern.test(trimmed)) {
+      return c.json({ error: 'domains must be an array of hostnames' }, 400)
+    }
   }
 
   // Normalize domains — lowercase, trim whitespace
