@@ -1,5 +1,5 @@
 /** Custom Cloudflare Access block/forbidden page — matches app dark-stone theme. */
-export function blockPage(teamDomain: string): string {
+export function blockPage(origin: string): string {
   return `<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -109,7 +109,7 @@ export function blockPage(teamDomain: string): string {
         If you believe this is an error, try signing in with a different account.
       </p>
       <div class="actions">
-        <a class="btn" href="https://${teamDomain}.cloudflareaccess.com/cdn-cgi/access/logout">
+        <a class="btn" href="${origin}/cdn-cgi/access/logout?returnTo=${encodeURIComponent(origin)}">
           Sign out
         </a>
         <a class="btn" href="/">
