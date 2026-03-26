@@ -62,6 +62,13 @@ router.post('/', async (c) => {
     return c.json({ error: 'No blog domain configured. Set one in Settings.' }, 422)
   }
 
+  // Channel-specific required field validation
+  if (body.channels.includes('resend') && !body.emailTo) {
+    return c.json({ error: 'emailTo is required when publishing to resend' }, 422)
+  }
+  if (body.channels.includes('youtube') && !body.videoUrl) {
+    return c.json({ error: 'videoUrl is required when publishing to youtube' }, 422)
+  }
   // Parse tags
   let tags: string[] = []
   try { tags = JSON.parse(piece.generatedTags) } catch { /* empty */ }
