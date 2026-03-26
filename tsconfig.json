@@ -1,0 +1,1 @@
+{"compilerOptions": {"jsx": "react-jsx", "esModuleInterop": true, "lib": ["dom", "esnext"], "moduleResolution": "node"}}
