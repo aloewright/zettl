@@ -18,6 +18,9 @@ interface BlogListItem {
   tags: string[]
 }
 
+const CODEBLOCK_PLACEHOLDER_PREFIX = '\x00CODEBLOCK'
+const CODEBLOCK_PLACEHOLDER_SUFFIX = '\x00'
+
 const BLOG_CSS = `
   :root {
     --bg: #fafaf9;
@@ -130,7 +133,7 @@ export function markdownToHtml(md: string): string {
   // isn't double-escaped and markdown patterns don't match inside them.
   const codeBlocks: string[] = []
   let html = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const placeholder = `\x00CODEBLOCK${codeBlocks.length}\x00`
+    const placeholder = `${CODEBLOCK_PLACEHOLDER_PREFIX}${codeBlocks.length}${CODEBLOCK_PLACEHOLDER_SUFFIX}`
     codeBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trimEnd())}</code></pre>`)
     return placeholder
   })
@@ -193,7 +196,10 @@ export function markdownToHtml(md: string): string {
   html = result.join('\n')
 
   // Step 5: Restore extracted code blocks.
-  const placeholderRe = /\x00CODEBLOCK(\d+)\x00/g
+  const placeholderRe = new RegExp(
+    `${CODEBLOCK_PLACEHOLDER_PREFIX}(\\d+)${CODEBLOCK_PLACEHOLDER_SUFFIX}`,
+    'g',
+  )
   html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
 
   return html
