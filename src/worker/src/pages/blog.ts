@@ -107,13 +107,6 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
-/** Strips unsafe URL schemes (javascript:, data:, vbscript:) from href/src values. */
-function sanitizeUrl(url: string): string {
-  const trimmed = url.trim()
-  if (/^(?:javascript|data|vbscript):/i.test(trimmed)) return '#'
-  return trimmed
-}
-
 /** Returns the URL unchanged if it uses a safe scheme, otherwise '#'. */
 function safeUrl(url: string): string {
   const trimmed = url.trim()
@@ -129,10 +122,6 @@ function formatDate(iso: string): string {
   } catch {
     return iso
   }
-}
-
-function isValidUrl(url: string): boolean {
-  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')
 }
 
 /** Minimal markdown → HTML (handles common patterns, no external deps). */
@@ -151,7 +140,7 @@ export function markdownToHtml(md: string): string {
 
   // Step 3: Apply markdown transformations (captured groups are already escaped).
   // Inline code
-  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${escapeHtml(code)}</code>`)
+  html = html.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`)
   // Headings
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -162,9 +151,9 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   // Links & images
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) =>
-    isValidUrl(url) ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />` : '')
+    safeUrl(url) !== '#' ? `<img src="${escapeHtml(safeUrl(url))}" alt="${escapeHtml(alt)}" />` : '')
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) =>
-    isValidUrl(url) ? `<a href="${escapeHtml(url)}">${text}</a>` : text)
+    safeUrl(url) !== '#' ? `<a href="${escapeHtml(safeUrl(url))}">${text}</a>` : text)
   // Blockquotes
   html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
@@ -203,8 +192,8 @@ export function markdownToHtml(md: string): string {
   if (inParagraph) result.push('</p>')
   html = result.join('\n')
 
-  // Step 4: Restore extracted code blocks.
-  const placeholderRe = new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g')
+  // Step 5: Restore extracted code blocks.
+  const placeholderRe = /\x00CODEBLOCK(\d+)\x00/g
   html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
 
   return html
