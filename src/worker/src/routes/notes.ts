@@ -270,7 +270,7 @@ router.post('/', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: id })
 
   const [created] = await db.select().from(notes).where(eq(notes.id, id))
-  return c.json({ ...created, tags: (body.tags ?? []).map(tag => ({ tag })) }, 201)
+  return c.json({ ...created, tags: (body.tags ?? []).map(tag => ({ noteId: id, tag })) }, 201)
 })
 
 router.put('/:id', async (c) => {
