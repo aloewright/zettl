@@ -35,7 +35,11 @@ function buildGatewayPath(path: string, body: unknown): string {
   const dynamicMatch = model?.match(/^(?:dynamic|ai-gateway)\/(.+)$/)
   if (dynamicMatch?.[1]) {
     const route = dynamicMatch[1]
-    return `/dynamic/${route}${path}`
+    // Only allow simple, safe route names and encode before interpolating.
+    if (!/^[A-Za-z0-9_-]+$/.test(route)) {
+      return `/compat${path}`
+    }
+    return `/dynamic/${encodeURIComponent(route)}${path}`
   }
   return `/compat${path}`
 }
