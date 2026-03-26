@@ -7,9 +7,8 @@ import { eq, and } from 'drizzle-orm'
 import { blogPosts, publishLog, appSettings } from '../db/schema'
 import { callMcpTool } from './mcp'
 import { makeId, isoNow } from '../types'
-import { markdownToHtml, escapeHtml } from '../pages/blog'
+import { markdownToHtml } from '../pages/blog'
 import type { createDb } from '../db/client'
-import { escapeHtml, markdownToHtml } from '../pages/blog'
 
 type Db = ReturnType<typeof createDb>
 
