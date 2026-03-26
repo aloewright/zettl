@@ -447,7 +447,7 @@ router.post('/:fleetingId/merge/:targetId', async (c) => {
   await c.env.EMBED_QUEUE.send({ noteId: targetId })
 
   const [updated] = await db.select().from(notes).where(eq(notes.id, targetId))
-  return c.json({ ...updated, tags: [...mergedTagSet].map(tag => ({ tag })) })
+  return c.json({ ...updated, tags: [...mergedTagSet].map(tag => ({ noteId: targetId, tag })) })
 })
 
 // ── Suggested tags ─────────────────────────────────────────────────────────────
