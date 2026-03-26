@@ -5,7 +5,7 @@ import { VitePWA, type VitePWAOptions } from 'vite-plugin-pwa'
 import path from 'path'
 
 // Export PWA options for testing
-export const pwaOptions: VitePWAOptions = {
+export const pwaOptions: Partial<VitePWAOptions> = {
   registerType: 'autoUpdate',
   manifest: {
     name: "Alex's Notes",
