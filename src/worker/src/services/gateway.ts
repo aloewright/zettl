@@ -20,8 +20,16 @@ export const GATEWAY_BASE = `https://gateway.ai.cloudflare.com/v1/${ACCOUNT_ID}/
 export const AI_GATEWAY_OPTS = { gateway: { id: GATEWAY_ID } }
 
 function extractModel(body: unknown): string | undefined {
-  if (typeof body !== 'object' || body === null) return undefined
-  const maybeModel = (body as { model?: unknown }).model
+  let obj: unknown = body
+  if (typeof body === 'string') {
+    try {
+      obj = JSON.parse(body)
+    } catch {
+      return undefined
+    }
+  }
+  if (typeof obj !== 'object' || obj === null) return undefined
+  const maybeModel = (obj as { model?: unknown }).model
   return typeof maybeModel === 'string' ? maybeModel : undefined
 }
 
