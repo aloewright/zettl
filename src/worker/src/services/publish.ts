@@ -162,34 +162,46 @@ export async function publishToChannel(
 ): Promise<PublishResult> {
   let result: PublishResult
 
-  switch (channel) {
-    case 'blog':
-      result = await publishToBlog(db, req)
-      break
-    case 'linkedin':
-      result = await publishToLinkedIn(req)
-      break
-    case 'youtube':
-      result = await publishToYouTube(req)
-      break
-    case 'resend':
-      result = await publishToResend(req)
-      break
-    default:
-      result = { channel, success: false, error: `Unknown channel: ${channel}` }
+  try {
+    switch (channel) {
+      case 'blog':
+        result = await publishToBlog(db, req)
+        break
+      case 'linkedin':
+        result = await publishToLinkedIn(req)
+        break
+      case 'youtube':
+        result = await publishToYouTube(req)
+        break
+      case 'resend':
+        result = await publishToResend(req)
+        break
+      default:
+        result = { channel, success: false, error: `Unknown channel: ${channel}` }
+    }
+  } catch (err) {
+    result = {
+      channel,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
   }
 
-  // Log the publish attempt
-  await db.insert(publishLog).values({
-    id: makeId(),
-    pieceId: req.pieceId,
-    channel,
-    status: result.success ? 'success' : 'failed',
-    externalUrl: result.externalUrl ?? null,
-    externalId: result.externalId ?? null,
-    errorMessage: result.error ?? null,
-    publishedAt: isoNow(),
-  })
+  try {
+    // Log the publish attempt
+    await db.insert(publishLog).values({
+      id: makeId(),
+      pieceId: req.pieceId,
+      channel,
+      status: result.success ? 'success' : 'failed',
+      externalUrl: result.externalUrl ?? null,
+      externalId: result.externalId ?? null,
+      errorMessage: result.error ?? null,
+      publishedAt: isoNow(),
+    })
+  } catch {
+    // emit telemetry if needed, but don't mask the publish result
+  }
 
   return result
 }
