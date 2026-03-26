@@ -11,7 +11,7 @@ import { Hono } from 'hono'
 import { eq, desc, and, sql } from 'drizzle-orm'
 import type { HonoEnv } from '../types'
 import { makeId, isoNow } from '../types'
-import { contentPieces, blogPosts, publishLog, appSettings } from '../db/schema'
+import { contentPieces, contentGenerations, blogPosts, publishLog, appSettings } from '../db/schema'
 import {
   publishToChannels,
   getDefaultBlogDomain,
@@ -48,10 +48,22 @@ router.post('/', async (c) => {
   const invalid = body.channels.filter(ch => !VALID_CHANNELS.includes(ch))
   if (invalid.length) return c.json({ error: `Invalid channels: ${invalid.join(', ')}` }, 400)
 
-  // Load the content piece
-  const [piece] = await db.select().from(contentPieces)
+  // Channel-specific required field validation
+  if (body.channels.includes('resend') && !body.emailTo) {
+    return c.json({ error: 'emailTo is required when publishing to resend' }, 422)
+  }
+  if (body.channels.includes('youtube') && !body.videoUrl) {
+    return c.json({ error: 'videoUrl is required when publishing to youtube' }, 422)
+  }
+
+  // Load the content piece + its generation for the title
+  const [row] = await db
+    .select({ piece: contentPieces, topicSummary: contentGenerations.topicSummary })
+    .from(contentPieces)
+    .leftJoin(contentGenerations, eq(contentPieces.generationId, contentGenerations.id))
     .where(eq(contentPieces.id, body.pieceId))
-  if (!piece) return c.json({ error: 'Content piece not found' }, 404)
+  if (!row) return c.json({ error: 'Content piece not found' }, 404)
+  const { piece, topicSummary } = row
 
   // Resolve blog domain
   let domain = body.domain
@@ -68,7 +80,7 @@ router.post('/', async (c) => {
 
   const results = await publishToChannels(db, body.channels, {
     pieceId: body.pieceId,
-    title: (piece as unknown as Record<string, unknown>).title as string ?? piece.description ?? 'Untitled',
+    title: topicSummary ?? piece.description ?? 'Untitled',
     body: piece.body,
     description: piece.description,
     tags,
@@ -106,7 +118,9 @@ router.get('/blog-posts', async (c) => {
   const offset = Math.max(0, parseInt(skip ?? '0'))
   const size = Math.min(100, Math.max(1, parseInt(take ?? '20')))
 
-  const condition = domain ? eq(blogPosts.domain, domain) : undefined
+  const condition = domain
+    ? and(eq(blogPosts.domain, domain), eq(blogPosts.status, 'published'))
+    : eq(blogPosts.status, 'published')
 
   const [rows, countRows] = await Promise.all([
     db.select().from(blogPosts)
@@ -168,10 +182,28 @@ router.put('/blog-domains', async (c) => {
     return c.json({ error: 'domains must be an array of strings' }, 400)
   }
 
-  // Normalize domains — lowercase, trim whitespace
-  const normalized = body.domains
-    .map(d => d.trim().toLowerCase())
-    .filter(Boolean)
+  // Validate and normalize each entry as a plain hostname
+  const normalized: string[] = []
+  for (const raw of body.domains) {
+    if (typeof raw !== 'string') continue
+    const d = raw.trim().toLowerCase()
+    if (!d) continue
+    // Reject entries that contain URL components (scheme, path, port, query)
+    try {
+      const parsed = new URL(`https://${d}`)
+      if (parsed.hostname !== d) {
+        return c.json({ error: `Invalid domain: "${raw}" must be a plain hostname (no scheme, port, or path)` }, 400)
+      }
+    } catch {
+      return c.json({ error: `Invalid domain: "${raw}"` }, 400)
+    }
+    // Conservative pattern: each label is alphanumeric with optional internal
+    // hyphens, labels are separated by dots (e.g. "example.com", "sub.example.co.uk").
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(d)) {
+      return c.json({ error: `Invalid domain: "${raw}"` }, 400)
+    }
+    normalized.push(d)
+  }
 
   await db.insert(appSettings)
     .values({ key: 'blog:domains', value: JSON.stringify(normalized) })

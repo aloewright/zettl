@@ -103,8 +103,15 @@ const BLOG_CSS = `
   .back:hover { color: var(--fg); }
 `
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** Strips unsafe URL schemes (javascript:, data:, vbscript:) from href/src values. */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim()
+  if (/^(?:javascript|data|vbscript):/i.test(trimmed)) return '#'
+  return trimmed
 }
 
 function formatDate(iso: string): string {
@@ -117,11 +124,27 @@ function formatDate(iso: string): string {
 
 /** Minimal markdown → HTML (handles common patterns, no external deps). */
 export function markdownToHtml(md: string): string {
-  let html = md
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
-    `<pre><code class="language-${lang}">${escapeHtml(code.trimEnd())}</code></pre>`)
-  // Inline code
+  // Step 1: Extract fenced code blocks to avoid escaping their rendered markup.
+  // Use STX/ETX control characters as delimiters — these cannot appear in
+  // sanitized markdown text (they are stripped by HTML encoding) and are
+  // extremely unlikely to appear in raw user input.
+  const PLACEHOLDER_PREFIX = '\x02CB'
+  const PLACEHOLDER_SUFFIX = '\x03'
+
+  const codeBlocks: string[] = []
+  let html = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    codeBlocks.push(`<pre><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trimEnd())}</code></pre>`)
+    return `${PLACEHOLDER_PREFIX}${codeBlocks.length - 1}${PLACEHOLDER_SUFFIX}`
+  })
+
+  // Step 2: HTML-escape the remaining text to neutralize any raw HTML tags.
+  // Only & < > need escaping here; " is not a markdown syntax character.
+  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  // Step 3: Apply markdown patterns. All captured text content is already safe
+  // from step 2. URLs need explicit sanitization to block javascript: etc.
+
+  // Inline code (content already escaped in step 2, just wrap)
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
   // Headings
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -131,11 +154,14 @@ export function markdownToHtml(md: string): string {
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  // Links & images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-  // Blockquotes
-  html = html.replace(/^> (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
+  // Images — sanitize src; alt is already escaped
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, src) =>
+    `<img src="${escapeHtml(sanitizeUrl(src))}" alt="${alt}" />`)
+  // Links — sanitize href; link text is already escaped
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) =>
+    `<a href="${escapeHtml(sanitizeUrl(href))}">${text}</a>`)
+  // Blockquotes (> was HTML-escaped to &gt; in step 2)
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>')
   // Horizontal rules
   html = html.replace(/^---$/gm, '<hr />')
   // Unordered lists
@@ -153,7 +179,7 @@ export function markdownToHtml(md: string): string {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       continue
     }
-    const isBlock = /^<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)/.test(trimmed)
+    const isBlock = /^(?:<(h[1-6]|pre|ul|ol|li|blockquote|hr|img)|\x02CB)/.test(trimmed)
     if (isBlock) {
       if (inParagraph) { result.push('</p>'); inParagraph = false }
       result.push(trimmed)
@@ -163,7 +189,13 @@ export function markdownToHtml(md: string): string {
     }
   }
   if (inParagraph) result.push('</p>')
-  return result.join('\n')
+  html = result.join('\n')
+
+  // Step 4: Restore extracted code blocks.
+  const placeholderRe = new RegExp(`${PLACEHOLDER_PREFIX}(\\d+)${PLACEHOLDER_SUFFIX}`, 'g')
+  html = html.replace(placeholderRe, (_, i) => codeBlocks[parseInt(i, 10)] ?? '')
+
+  return html
 }
 
 function layout(domain: string, title: string, content: string, meta?: { description?: string; ogImage?: string; url?: string }) {

@@ -8,6 +8,7 @@ import { blogPosts, publishLog, appSettings } from '../db/schema'
 import { callMcpTool } from './mcp'
 import { makeId, isoNow } from '../types'
 import type { createDb } from '../db/client'
+import { escapeHtml, markdownToHtml } from '../pages/blog'
 
 type Db = ReturnType<typeof createDb>
 
@@ -74,6 +75,16 @@ async function publishToBlog(db: Db, req: PublishRequest): Promise<PublishResult
     status: 'published',
     publishedAt: now,
     updatedAt: now,
+  }).onConflictDoUpdate({
+    target: [blogPosts.domain, blogPosts.slug],
+    set: {
+      title: req.title,
+      body: req.body,
+      description: req.description ?? null,
+      tags: JSON.stringify(req.tags ?? []),
+      status: 'published',
+      updatedAt: now,
+    },
   })
 
   const externalUrl = `https://${req.domain}/${slug}`
@@ -89,15 +100,23 @@ async function publishToLinkedIn(req: PublishRequest): Promise<PublishResult> {
       text: req.body,
     }) as { successful?: boolean; data?: { id?: string; url?: string } }
 
-    if (result?.successful !== false) {
+    const isSuccessful = result?.successful === true
+    const externalUrl = result?.data?.url
+    const externalId = result?.data?.id
+
+    if (isSuccessful && (externalUrl || externalId)) {
       return {
         channel: 'linkedin',
         success: true,
-        externalUrl: result?.data?.url,
-        externalId: result?.data?.id,
+        externalUrl,
+        externalId,
       }
     }
-    return { channel: 'linkedin', success: false, error: 'LinkedIn post creation returned unsuccessful' }
+    return {
+      channel: 'linkedin',
+      success: false,
+      error: 'LinkedIn post creation returned unsuccessful or missing expected data',
+    }
   } catch (err) {
     return { channel: 'linkedin', success: false, error: err instanceof Error ? err.message : String(err) }
   }
@@ -115,15 +134,23 @@ async function publishToYouTube(req: PublishRequest): Promise<PublishResult> {
       video_url: req.videoUrl,
     }) as { successful?: boolean; data?: { id?: string; url?: string } }
 
-    if (result?.successful !== false) {
+    const isSuccessful = result?.successful === true
+    const externalId = result?.data?.id
+    const externalUrl = result?.data?.url ?? (externalId ? `https://youtube.com/watch?v=${externalId}` : undefined)
+
+    if (isSuccessful && externalId) {
       return {
         channel: 'youtube',
         success: true,
-        externalUrl: result?.data?.url ?? (result?.data?.id ? `https://youtube.com/watch?v=${result.data.id}` : undefined),
-        externalId: result?.data?.id,
+        externalUrl,
+        externalId,
       }
     }
-    return { channel: 'youtube', success: false, error: 'YouTube upload returned unsuccessful' }
+    return {
+      channel: 'youtube',
+      success: false,
+      error: 'YouTube upload returned unsuccessful or missing expected data',
+    }
   } catch (err) {
     return { channel: 'youtube', success: false, error: err instanceof Error ? err.message : String(err) }
   }
@@ -137,17 +164,20 @@ async function publishToResend(req: PublishRequest): Promise<PublishResult> {
       from: req.emailFrom ?? 'blog@thinkingfeeling.com',
       to: req.emailTo,
       subject: req.emailSubject ?? req.title,
-      html: `<h1>${req.title}</h1>${req.body.replace(/\n/g, '<br/>')}`,
+      html: `<h1>${escapeHtml(req.title)}</h1>${markdownToHtml(req.body)}`,
     }) as { successful?: boolean; data?: { id?: string } }
 
-    if (result?.successful !== false) {
+    const isSuccessful = result?.successful === true
+    const externalId = result?.data?.id
+
+    if (isSuccessful && externalId) {
       return {
         channel: 'resend',
         success: true,
-        externalId: result?.data?.id,
+        externalId,
       }
     }
-    return { channel: 'resend', success: false, error: 'Resend email returned unsuccessful' }
+    return { channel: 'resend', success: false, error: 'Resend email returned unsuccessful or missing expected data' }
   } catch (err) {
     return { channel: 'resend', success: false, error: err instanceof Error ? err.message : String(err) }
   }
