@@ -6,6 +6,7 @@ import { Send, Mic, MicOff, Paperclip, X, Bot, User, Plug, Square, Loader2 } fro
 import { Button } from '@/components/ui/button'
 import { useComposioConfig } from '@/hooks/use-composio'
 import { toast } from 'sonner'
+import { buildChatParts } from '@/lib/chat-parts'
 
 interface AiChatProps {
   open: boolean
@@ -22,7 +23,8 @@ function getMessageText(message: UIMessage): string {
 export function AiChat({ open, onOpenChange }: AiChatProps) {
   const [input, setInput] = useState('')
   const [isRecording, setIsRecording] = useState(false)
-  const [attachedFile, setAttachedFile] = useState<{ name: string; dataUrl: string } | null>(null)
+  const [attachedFile, setAttachedFile] = useState<{ name: string; dataUrl: string; mimeType: string } | null>(null)
+  const [extracting, setExtracting] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -76,16 +78,40 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
     if (open) inputRef.current?.focus()
   }, [open])
 
-  const send = useCallback(() => {
+  const send = useCallback(async () => {
     const text = input.trim()
     if (!text && !attachedFile) return
-    if (isStreaming) return
+    if (isStreaming || extracting) return
 
-    const content = attachedFile ? `[Attached: ${attachedFile.name}]\n\n${text}` : text
+    let pdfText: string | undefined
+    if (attachedFile?.mimeType === 'application/pdf') {
+      setExtracting(true)
+      try {
+        const { extractPdfText } = await import('@/lib/pdf')
+        pdfText = await extractPdfText(attachedFile.dataUrl)
+        if (!pdfText.trim()) {
+          toast.error('Could not extract text from PDF')
+          setExtracting(false)
+          return
+        }
+      } catch {
+        toast.error('Failed to read PDF')
+        setExtracting(false)
+        return
+      }
+      setExtracting(false)
+    }
+
+    const parts = buildChatParts(
+      text,
+      attachedFile ? { file: attachedFile, pdfText } : null,
+    )
+    if (!parts) return
+
     setInput('')
     setAttachedFile(null)
-    sendMessage({ role: 'user', parts: [{ type: 'text', text: content }] })
-  }, [input, attachedFile, isStreaming, sendMessage])
+    sendMessage({ role: 'user', parts: parts as any })
+  }, [input, attachedFile, isStreaming, extracting, sendMessage])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -105,7 +131,7 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
 
     const reader = new FileReader()
     reader.onload = () => {
-      setAttachedFile({ name: file.name, dataUrl: reader.result as string })
+      setAttachedFile({ name: file.name, dataUrl: reader.result as string, mimeType: file.type })
     }
     reader.readAsDataURL(file)
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -235,11 +261,13 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
       {/* Attached file indicator */}
       {attachedFile && (
         <div className="mx-4 mb-2 flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-xs">
-          <Paperclip className="h-3 w-3 shrink-0" />
-          <span className="truncate">{attachedFile.name}</span>
-          <button onClick={() => setAttachedFile(null)} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
-            <X className="h-3 w-3" />
-          </button>
+          {extracting ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Paperclip className="h-3 w-3 shrink-0" />}
+          <span className="truncate">{extracting ? `Reading ${attachedFile.name}…` : attachedFile.name}</span>
+          {!extracting && (
+            <button onClick={() => setAttachedFile(null)} className="ml-auto shrink-0 text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
       )}
 
@@ -305,7 +333,7 @@ export function AiChat({ open, onOpenChange }: AiChatProps) {
               type="submit"
               size="sm"
               className="h-8 w-8 p-0"
-              disabled={!input.trim() && !attachedFile}
+              disabled={extracting || (!input.trim() && !attachedFile)}
             >
               <Send className="h-4 w-4" />
             </Button>

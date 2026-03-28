@@ -21,7 +21,7 @@ export class ChatAgent extends AIChatAgent<Env> {
 
     const result = streamText({
       abortSignal: options?.abortSignal,
-      model: workersai('@cf/moonshotai/kimi-k2.5'),
+      model: workersai('@cf/meta/llama-3.2-11b-vision-instruct'),
       system:
         'You are a helpful AI assistant for a personal Zettelkasten knowledge management system called Zettl. ' +
         'Help the user think through ideas, answer questions, and suggest connections between concepts. ' +
