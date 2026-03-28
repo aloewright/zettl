@@ -8,6 +8,7 @@ export interface Env {
   CF_AI_GATEWAY_URL?: string  // plain env var (informational)
   CF_ACCESS_TEAM?: string     // Cloudflare Access team domain
   CF_AIG_TOKEN?: string       // AI Gateway auth token (wrangler secret, fallback for fetch)
+  VOICE_SERVICE_URL?: string  // URL of the voice service (e.g. https://voice.example.com)
   // AI binding — pre-authenticated, no cf-aig-authorization header needed
   AI: Ai
   // Durable Object binding for ChatAgent

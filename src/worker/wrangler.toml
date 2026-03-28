@@ -6,6 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 CF_AI_GATEWAY_URL = "https://gateway.ai.cloudflare.com/v1/85d376fc54617bcb57185547f08e528b/x"
 CF_ACCESS_TEAM = "worthy"
+VOICE_SERVICE_URL = ""
 [observability]
 enabled = true
 
@@ -17,7 +18,7 @@ invocation_logs = true
 directory = "../zettel-web-ui/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/agents/*", "/health", "/media/*"]
+run_worker_first = ["/api/*", "/agents/*", "/health", "/media/*", "/voice-service/*"]
 
 # ── Durable Objects (ChatAgent for AI chat) ─────────────────────────────────
 [durable_objects]

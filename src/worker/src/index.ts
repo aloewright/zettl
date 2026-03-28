@@ -23,6 +23,7 @@ import composioRouter from './routes/composio'
 import substackRouter from './routes/substack'
 import publishRouter from './routes/publish'
 import blogRouter, { isBlogDomain } from './routes/blog'
+import voiceProxyRouter from './routes/voice-proxy'
 import authRouter from './routes/auth'
 import { createDb } from './db/client'
 import aiChatRouter from './routes/ai-chat'
@@ -79,6 +80,9 @@ app.route('/api/composio', composioRouter)
 app.route('/api/substack', substackRouter)
 app.route('/api/publish', publishRouter)
 app.route('/api/ai/chat', aiChatRouter)
+
+// ── Voice service proxy (WebSocket-aware) ───────────────────────────────────
+app.route('/voice-service', voiceProxyRouter)
 
 // ── Media serving (R2) ───────────────────────────────────────────────────────
 
