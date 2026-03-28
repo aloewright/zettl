@@ -45,7 +45,7 @@ export function gatewayHeaders(env: Env, extra?: Record<string, string>): Record
  * Everything else goes to `/compat{path}`.
  */
 function buildGatewayUrl(model: string, path: string): string {
-  if (!model || typeof model !== 'string') {
+  if (!model) {
     throw new Error('AI Gateway: model is required in request body')
   }
   if (model.startsWith('dynamic/')) {
