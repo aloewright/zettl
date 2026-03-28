@@ -37,8 +37,9 @@ export function buildChatParts(
   if (parts.length === 0) return null
 
   // If only file parts (image) with no text, add default prompt
-  if (!text && parts.every(p => p.type === 'file')) {
-    parts.push({ type: 'text', text: 'What can you see in this?' })
+  const hasOnlyFiles = !text && parts.every(p => p.type === 'file')
+  if (hasOnlyFiles) {
+    ;(parts as ChatPart[]).push({ type: 'text', text: 'What can you see in this?' })
   }
 
   return parts
